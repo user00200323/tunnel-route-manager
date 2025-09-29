@@ -27,3 +27,6 @@ verify_jwt = false
 
 [functions.tunnel-management]
 verify_jwt = false
+
+[functions.cloudflare-import]
+verify_jwt = false

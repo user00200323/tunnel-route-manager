@@ -121,11 +121,14 @@ export const Api = {
     }
   },
 
-  async createDomain(data: Omit<Domain, 'id' | 'createdAt' | 'updatedAt'>): Promise<Domain> {
+  async createDomain(data: Omit<Domain, 'id' | 'created_at' | 'updated_at'>): Promise<Domain> {
     try {
       const { data: newDomain, error } = await supabase
         .from('domains')
-        .insert([data])
+        .insert([{
+          ...data,
+          fqdn: data.hostname, // Ensure fqdn is set
+        }])
         .select()
         .single();
 

@@ -111,11 +111,59 @@ export type Database = {
           },
         ]
       }
+      dns_records: {
+        Row: {
+          content: string
+          created_at: string
+          domain_id: string
+          id: string
+          name: string
+          provider_ref: string | null
+          proxied: boolean | null
+          ttl: number | null
+          type: string
+          updated_at: string
+        }
+        Insert: {
+          content: string
+          created_at?: string
+          domain_id: string
+          id?: string
+          name: string
+          provider_ref?: string | null
+          proxied?: boolean | null
+          ttl?: number | null
+          type: string
+          updated_at?: string
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          domain_id?: string
+          id?: string
+          name?: string
+          provider_ref?: string | null
+          proxied?: boolean | null
+          ttl?: number | null
+          type?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dns_records_domain_id_fkey"
+            columns: ["domain_id"]
+            isOneToOne: false
+            referencedRelation: "domains"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       domains: {
         Row: {
           active: boolean | null
           created_at: string | null
           error_message: string | null
+          fqdn: string
           hostname: string
           id: string
           last_check_at: string | null
@@ -128,11 +176,13 @@ export type Database = {
           type: Database["public"]["Enums"]["domain_type"] | null
           updated_at: string | null
           vps_id: string | null
+          www_alias: boolean | null
         }
         Insert: {
           active?: boolean | null
           created_at?: string | null
           error_message?: string | null
+          fqdn: string
           hostname: string
           id?: string
           last_check_at?: string | null
@@ -145,11 +195,13 @@ export type Database = {
           type?: Database["public"]["Enums"]["domain_type"] | null
           updated_at?: string | null
           vps_id?: string | null
+          www_alias?: boolean | null
         }
         Update: {
           active?: boolean | null
           created_at?: string | null
           error_message?: string | null
+          fqdn?: string
           hostname?: string
           id?: string
           last_check_at?: string | null
@@ -162,6 +214,7 @@ export type Database = {
           type?: Database["public"]["Enums"]["domain_type"] | null
           updated_at?: string | null
           vps_id?: string | null
+          www_alias?: boolean | null
         }
         Relationships: [
           {
@@ -298,6 +351,8 @@ export type Database = {
           notes: string | null
           provider: Database["public"]["Enums"]["vps_provider"] | null
           region: string | null
+          ssh_host: unknown | null
+          ssh_user: string | null
           tunnel_id: string | null
           updated_at: string | null
         }
@@ -312,6 +367,8 @@ export type Database = {
           notes?: string | null
           provider?: Database["public"]["Enums"]["vps_provider"] | null
           region?: string | null
+          ssh_host?: unknown | null
+          ssh_user?: string | null
           tunnel_id?: string | null
           updated_at?: string | null
         }
@@ -326,6 +383,8 @@ export type Database = {
           notes?: string | null
           provider?: Database["public"]["Enums"]["vps_provider"] | null
           region?: string | null
+          ssh_host?: unknown | null
+          ssh_user?: string | null
           tunnel_id?: string | null
           updated_at?: string | null
         }

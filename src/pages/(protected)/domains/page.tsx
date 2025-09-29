@@ -135,14 +135,17 @@ export default function DomainsPage() {
             <div className="space-y-2">
               <label className="text-sm font-medium">VPS</label>
               <Select 
-                value={filters.vpsId} 
-                onValueChange={(value) => setFilters({ ...filters, vpsId: value })}
+                value={filters.vpsId || "all"} 
+                onValueChange={(value) => setFilters({ 
+                  ...filters, 
+                  vpsId: value === "all" ? "" : value 
+                })}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Todas as VPS" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Todas as VPS</SelectItem>
+                  <SelectItem value="all">Todas as VPS</SelectItem>
                   {data?.vpsList.map((vps: any) => (
                     <SelectItem key={vps.id} value={vps.id}>
                       {vps.name}
@@ -155,17 +158,17 @@ export default function DomainsPage() {
             <div className="space-y-2">
               <label className="text-sm font-medium">Status</label>
               <Select 
-                value={filters.active?.toString() || ""} 
+                value={filters.active?.toString() || "all"} 
                 onValueChange={(value) => setFilters({ 
                   ...filters, 
-                  active: value === "" ? undefined : value === "true" 
+                  active: value === "all" ? undefined : value === "true" 
                 })}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Todos os status" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Todos os status</SelectItem>
+                  <SelectItem value="all">Todos os status</SelectItem>
                   <SelectItem value="true">Ativo</SelectItem>
                   <SelectItem value="false">Inativo</SelectItem>
                 </SelectContent>

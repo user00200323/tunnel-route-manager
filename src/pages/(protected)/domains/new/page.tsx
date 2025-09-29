@@ -145,8 +145,8 @@ export default function DomainsNewPage() {
                       <FormItem>
                         <FormLabel>VPS Inicial (Opcional)</FormLabel>
                         <Select 
-                          onValueChange={field.onChange} 
-                          defaultValue={field.value}
+                          onValueChange={(value) => field.onChange(value === "none" ? undefined : value)} 
+                          defaultValue={field.value || "none"}
                           disabled={vpsLoading}
                         >
                           <FormControl>
@@ -155,7 +155,7 @@ export default function DomainsNewPage() {
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            <SelectItem value="">Nenhuma VPS</SelectItem>
+                            <SelectItem value="none">Nenhuma VPS</SelectItem>
                             {vpsList?.map((vps: any) => (
                               <SelectItem key={vps.id} value={vps.id}>
                                 <div className="flex items-center gap-2">

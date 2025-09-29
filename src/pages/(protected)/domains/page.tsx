@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useRealtimeData } from "@/hooks/useRealtimeData";
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -21,8 +22,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Plus, Search, Globe, ArrowUpDown, Download } from "lucide-react";
+import { Plus, Search, Globe, ArrowUpDown, Download, ArrowRightLeft } from "lucide-react";
 import { HealthPill } from "@/components/HealthPill";
+import { SwitchVpsDialog } from "@/components/SwitchVpsDialog";
 import type { Domain, VPS } from "@/types";
 import { Api } from "@/services/api";
 import { toast } from "sonner";
@@ -35,6 +37,14 @@ export default function DomainsPage() {
     vpsId: "",
     active: undefined as boolean | undefined,
   });
+  const [switchDialog, setSwitchDialog] = useState<{
+    open: boolean;
+    domain?: Domain;
+    currentVps?: VPS;
+  }>({ open: false });
+
+  // Enable realtime updates
+  useRealtimeData();
 
   const importMutation = useMutation({
     mutationFn: () => Api.importCloudflareDomainsSync(),
@@ -263,16 +273,35 @@ export default function DomainsPage() {
                         {new Date(domain.created_at).toLocaleDateString("pt-BR")}
                       </TableCell>
                       <TableCell className="text-right">
-                        <Button 
-                          variant="outline" 
-                          size="sm"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            navigate(`/domains/${domain.id}`);
-                          }}
-                        >
-                          Ver Detalhes
-                        </Button>
+                        <div className="flex gap-2 justify-end">
+                          {vps && (
+                            <Button 
+                              variant="outline" 
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSwitchDialog({
+                                  open: true,
+                                  domain,
+                                  currentVps: vps
+                                });
+                              }}
+                            >
+                              <ArrowRightLeft className="h-3 w-3 mr-1" />
+                              Trocar VPS
+                            </Button>
+                          )}
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigate(`/domains/${domain.id}`);
+                            }}
+                          >
+                            Ver Detalhes
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   );
@@ -282,6 +311,14 @@ export default function DomainsPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Switch VPS Dialog */}
+      <SwitchVpsDialog
+        open={switchDialog.open}
+        onOpenChange={(open) => setSwitchDialog({ open })}
+        domain={switchDialog.domain!}
+        currentVps={switchDialog.currentVps}
+      />
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useRealtimeData } from "@/hooks/useRealtimeData";
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -15,6 +16,9 @@ import { Api } from "@/services/api";
 export default function VpsPage() {
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
+  
+  // Enable realtime updates
+  useRealtimeData();
   
   const { data: allVps = [], isLoading: vpsLoading, refetch } = useQuery({
     queryKey: ["vps"],

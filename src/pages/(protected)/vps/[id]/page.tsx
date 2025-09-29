@@ -15,6 +15,9 @@ import { toast } from "sonner";
 
 export default function VpsDetailPage() {
   const { id } = useParams<{ id: string }>();
+  
+  // Enable realtime updates
+  useRealtimeData();
   const queryClient = useQueryClient();
   
   const { data: vps, isLoading: vpsLoading } = useQuery({

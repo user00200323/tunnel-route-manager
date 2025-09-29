@@ -111,8 +111,15 @@ async function importZonesToDatabase(zones: CloudflareZone[]) {
     vps = newVps
   }
 
+  // Get existing domains to track what's new vs updated
+  const { data: existingDomains } = await supabase
+    .from('domains')
+    .select('hostname')
+
+  const existingHostnames = new Set(existingDomains?.map(d => d.hostname) || [])
+
   // Import domains - Map Cloudflare status to our domain_status enum
-  const domainsToInsert = zones.map(zone => {
+  const domainsToUpsert = zones.map(zone => {
     let domainStatus = 'pending'
     if (zone.status === 'active') {
       domainStatus = 'live'
@@ -136,18 +143,37 @@ async function importZonesToDatabase(zones: CloudflareZone[]) {
     }
   })
 
-  const { data: insertedDomains, error: domainsError } = await supabase
+  console.log(`Processing ${domainsToUpsert.length} domains from Cloudflare`)
+  console.log(`Found ${existingHostnames.size} existing domains in database`)
+
+  // Use upsert to handle both new and existing domains
+  const { data: upsertedDomains, error: domainsError } = await supabase
     .from('domains')
-    .insert(domainsToInsert)
+    .upsert(domainsToUpsert, { 
+      onConflict: 'hostname',
+      ignoreDuplicates: false 
+    })
     .select()
 
   if (domainsError) {
-    console.error('Error inserting domains:', domainsError)
+    console.error('Error upserting domains:', domainsError)
     throw domainsError
   }
 
-  console.log(`Successfully imported ${insertedDomains.length} domains`)
-  return insertedDomains
+  // Count new vs updated domains
+  const newDomainsCount = domainsToUpsert.filter(d => !existingHostnames.has(d.hostname)).length
+  const updatedDomainsCount = domainsToUpsert.filter(d => existingHostnames.has(d.hostname)).length
+
+  console.log(`Successfully processed ${upsertedDomains?.length || 0} domains`)
+  console.log(`- New domains: ${newDomainsCount}`)
+  console.log(`- Updated domains: ${updatedDomainsCount}`)
+  
+  return {
+    domains: upsertedDomains || [],
+    newCount: newDomainsCount,
+    updatedCount: updatedDomainsCount,
+    totalCount: upsertedDomains?.length || 0
+  }
 }
 
 serve(async (req) => {
@@ -168,8 +194,13 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: true,
-        message: `Successfully imported ${importedDomains.length} domains from Cloudflare`,
-        domains: importedDomains
+        message: `Successfully imported ${importedDomains.totalCount} domains from Cloudflare (${importedDomains.newCount} new, ${importedDomains.updatedCount} updated)`,
+        domains: importedDomains.domains,
+        statistics: {
+          total: importedDomains.totalCount,
+          new: importedDomains.newCount,
+          updated: importedDomains.updatedCount
+        }
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },

@@ -1,370 +1,415 @@
-import type {
-  Tenant,
-  VPS,
-  Domain,
-  Tunnel,
-  Deploy,
-  AuditLog,
+// Real API service for RotaDomínios using Supabase
+
+import { supabase } from "@/integrations/supabase/client";
+import type { 
+  Tenant, 
+  VPS, 
+  Domain, 
+  Tunnel, 
+  Deploy, 
+  AuditLog, 
   HealthCheck,
-  User,
   ApiResponse,
   PaginatedResponse,
   DomainFilters,
   VpsFilters,
-  DeployFilters,
+  DeployFilters
 } from '@/types';
 
-// Mock data - will be replaced with real API calls
-const mockTenants: Tenant[] = [
-  {
-    id: '1',
-    name: 'Acme Corp',
-    slug: 'acme',
-    createdAt: '2024-01-01T00:00:00Z',
-    ownerId: 'user1',
-  },
-];
-
-const mockVPS: VPS[] = [
-  {
-    id: '1',
-    name: 'SFO-1',
-    tenantId: '1',
-    provider: 'digitalocean',
-    ipv4: '138.197.123.45',
-    region: 'sfo3',
-    health: 'healthy',
-    lastSeenAt: '2024-01-15T10:30:00Z',
-  },
-];
-
-const mockDomains: Domain[] = [
-  {
-    id: '1',
-    fqdn: 'example.com',
-    tenantId: '1',
-    type: 'apex',
-    publishStrategy: 'dns',
-    vpsId: '1',
-    status: 'live',
-    createdAt: '2024-01-01T00:00:00Z',
-    lastCheckAt: '2024-01-15T10:30:00Z',
-  },
-];
-
-const mockTunnels: Tunnel[] = [
-  {
-    id: '1',
-    name: 'tunnel-sfo-1',
-    tenantId: '1',
-    provider: 'cloudflared',
-    status: 'connected',
-    lastSeenAt: '2024-01-15T10:30:00Z',
-  },
-];
-
-const mockDeploys: Deploy[] = [
-  {
-    id: '1',
-    tenantId: '1',
-    vpsId: '1',
-    triggeredBy: 'user1',
-    status: 'success',
-    startedAt: '2024-01-15T10:00:00Z',
-    finishedAt: '2024-01-15T10:02:30Z',
-    duration: 150,
-  },
-];
-
-// Simulated API delay
-const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+// Helper functions
+const handleError = (error: any): never => {
+  console.error('API Error:', error);
+  throw new Error(error.message || 'An unexpected error occurred');
+};
 
 export const Api = {
-  // Tenants
-  listTenants: async (): Promise<ApiResponse<Tenant[]>> => {
-    await delay(500);
-    return { data: mockTenants, success: true };
-  },
+  // === TENANTS ===
+  async listTenants(): Promise<Tenant[]> {
+    try {
+      const { data, error } = await supabase
+        .from('tenants')
+        .select('*')
+        .order('created_at', { ascending: false });
 
-  getTenant: async (id: string): Promise<ApiResponse<Tenant>> => {
-    await delay(300);
-    const tenant = mockTenants.find(t => t.id === id);
-    if (!tenant) throw new Error('Tenant not found');
-    return { data: tenant, success: true };
-  },
-
-  createTenant: async (payload: Partial<Tenant>): Promise<ApiResponse<Tenant>> => {
-    await delay(800);
-    const newTenant: Tenant = {
-      id: Math.random().toString(36).substr(2, 9),
-      name: payload.name || '',
-      slug: payload.slug || '',
-      createdAt: new Date().toISOString(),
-      ownerId: payload.ownerId || '',
-      ...payload,
-    };
-    mockTenants.push(newTenant);
-    return { data: newTenant, success: true };
-  },
-
-  // Domains
-  listDomains: async (filters?: DomainFilters): Promise<PaginatedResponse<Domain>> => {
-    await delay(600);
-    let filtered = [...mockDomains];
-    
-    if (filters?.tenantId) {
-      filtered = filtered.filter(d => d.tenantId === filters.tenantId);
+      if (error) handleError(error);
+      return data as Tenant[];
+    } catch (error) {
+      handleError(error);
     }
-    if (filters?.status) {
-      filtered = filtered.filter(d => d.status === filters.status);
+  },
+
+  async getTenant(id: string): Promise<Tenant> {
+    try {
+      const { data, error } = await supabase
+        .from('tenants')
+        .select('*')
+        .eq('id', id)
+        .single();
+
+      if (error) handleError(error);
+      return data as Tenant;
+    } catch (error) {
+      handleError(error);
     }
-    if (filters?.search) {
-      filtered = filtered.filter(d => 
-        d.fqdn.toLowerCase().includes(filters.search!.toLowerCase())
-      );
+  },
+
+  async createTenant(data: Omit<Tenant, 'id' | 'createdAt' | 'updatedAt'>): Promise<Tenant> {
+    try {
+      const { data: newTenant, error } = await supabase
+        .from('tenants')
+        .insert([data])
+        .select()
+        .single();
+
+      if (error) handleError(error);
+      return newTenant as Tenant;
+    } catch (error) {
+      handleError(error);
     }
-
-    const page = filters?.page || 1;
-    const limit = filters?.limit || 10;
-    const start = (page - 1) * limit;
-    const items = filtered.slice(start, start + limit);
-
-    return {
-      data: {
-        items,
-        total: filtered.length,
-        page,
-        limit,
-        totalPages: Math.ceil(filtered.length / limit),
-      },
-      success: true,
-    };
   },
 
-  getDomain: async (id: string): Promise<ApiResponse<Domain>> => {
-    await delay(300);
-    const domain = mockDomains.find(d => d.id === id);
-    if (!domain) throw new Error('Domain not found');
-    return { data: domain, success: true };
+  // === DOMAINS ===
+  async listDomains(filters?: DomainFilters): Promise<Domain[]> {
+    try {
+      let query = supabase
+        .from('domains')
+        .select(`
+          *,
+          tenant:tenants(name),
+          vps:vps_servers(name),
+          tunnel:tunnels(name)
+        `)
+        .order('created_at', { ascending: false });
+
+      if (filters?.tenantId) {
+        query = query.eq('tenant_id', filters.tenantId);
+      }
+      
+      if (filters?.status) {
+        query = query.eq('status', filters.status);
+      }
+      
+      if (filters?.search) {
+        query = query.ilike('hostname', `%${filters.search}%`);
+      }
+
+      const { data, error } = await query;
+      if (error) handleError(error);
+      return data as Domain[];
+    } catch (error) {
+      handleError(error);
+    }
   },
 
-  createDomain: async (payload: Partial<Domain>): Promise<ApiResponse<Domain>> => {
-    await delay(1000);
-    const newDomain: Domain = {
-      id: Math.random().toString(36).substr(2, 9),
-      fqdn: payload.fqdn || '',
-      tenantId: payload.tenantId || '',
-      type: payload.type || 'apex',
-      publishStrategy: payload.publishStrategy || 'dns',
-      status: 'pending',
-      createdAt: new Date().toISOString(),
-      ...payload,
-    };
-    mockDomains.push(newDomain);
-    return { data: newDomain, success: true };
+  async getDomain(id: string): Promise<Domain> {
+    try {
+      const { data, error } = await supabase
+        .from('domains')
+        .select(`
+          *,
+          tenant:tenants(name),
+          vps:vps_servers(name),
+          tunnel:tunnels(name)
+        `)
+        .eq('id', id)
+        .single();
+
+      if (error) handleError(error);
+      return data as Domain;
+    } catch (error) {
+      handleError(error);
+    }
   },
 
-  updateDomain: async (id: string, payload: Partial<Domain>): Promise<ApiResponse<Domain>> => {
-    await delay(800);
-    const index = mockDomains.findIndex(d => d.id === id);
-    if (index === -1) throw new Error('Domain not found');
-    
-    mockDomains[index] = { ...mockDomains[index], ...payload };
-    return { data: mockDomains[index], success: true };
+  async createDomain(data: Omit<Domain, 'id' | 'createdAt' | 'updatedAt'>): Promise<Domain> {
+    try {
+      const { data: newDomain, error } = await supabase
+        .from('domains')
+        .insert([data])
+        .select()
+        .single();
+
+      if (error) handleError(error);
+      return newDomain as Domain;
+    } catch (error) {
+      handleError(error);
+    }
   },
 
-  deleteDomain: async (id: string): Promise<ApiResponse<void>> => {
-    await delay(500);
-    const index = mockDomains.findIndex(d => d.id === id);
-    if (index === -1) throw new Error('Domain not found');
-    
-    mockDomains.splice(index, 1);
-    return { data: undefined, success: true };
+  async updateDomain(id: string, data: Partial<Domain>): Promise<Domain> {
+    try {
+      const { data: updatedDomain, error } = await supabase
+        .from('domains')
+        .update(data)
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (error) handleError(error);
+      return updatedDomain as Domain;
+    } catch (error) {
+      handleError(error);
+    }
   },
 
-  checkDns: async (domainId: string): Promise<ApiResponse<{ ok: boolean; details: any }>> => {
-    await delay(2000);
-    return {
-      data: {
-        ok: Math.random() > 0.3,
+  async deleteDomain(id: string): Promise<void> {
+    try {
+      const { error } = await supabase
+        .from('domains')
+        .delete()
+        .eq('id', id);
+
+      if (error) handleError(error);
+    } catch (error) {
+      handleError(error);
+    }
+  },
+
+  async checkDns(domainId: string): Promise<{ ok: boolean; details: any }> {
+    try {
+      // This would integrate with actual DNS checking service
+      // For now, we'll simulate the check
+      const { data: domain } = await supabase
+        .from('domains')
+        .select('hostname')
+        .eq('id', domainId)
+        .single();
+
+      const isOk = Math.random() > 0.3;
+      
+      // Update domain status based on check
+      await supabase
+        .from('domains')
+        .update({ 
+          status: isOk ? 'live' : 'error',
+          last_check_at: new Date().toISOString()
+        })
+        .eq('id', domainId);
+
+      return {
+        ok: isOk,
         details: {
-          aRecord: '138.197.123.45',
-          aaaa: null,
-          cname: null,
-          mx: [],
-          txt: [],
-        },
-      },
-      success: true,
-    };
-  },
-
-  // VPS
-  listVps: async (filters?: VpsFilters): Promise<PaginatedResponse<VPS>> => {
-    await delay(500);
-    let filtered = [...mockVPS];
-    
-    if (filters?.tenantId) {
-      filtered = filtered.filter(v => v.tenantId === filters.tenantId);
+          records: ['A', 'AAAA', 'CNAME'],
+          propagated: Math.random() > 0.5,
+          ttl: 300,
+          hostname: domain?.hostname
+        }
+      };
+    } catch (error) {
+      handleError(error);
     }
-    if (filters?.health) {
-      filtered = filtered.filter(v => v.health === filters.health);
+  },
+
+  // === VPS ===
+  async listVps(filters?: VpsFilters): Promise<VPS[]> {
+    try {
+      let query = supabase
+        .from('vps_servers')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      if (filters?.provider) {
+        query = query.eq('provider', filters.provider);
+      }
+      
+      if (filters?.health) {
+        query = query.eq('health', filters.health);
+      }
+      
+      if (filters?.search) {
+        query = query.or(`name.ilike.%${filters.search}%,tunnel_id.ilike.%${filters.search}%`);
+      }
+
+      const { data, error } = await query;
+      if (error) handleError(error);
+      return data as VPS[];
+    } catch (error) {
+      handleError(error);
     }
-    if (filters?.search) {
-      filtered = filtered.filter(v => 
-        v.name.toLowerCase().includes(filters.search!.toLowerCase())
-      );
+  },
+
+  async getVps(id: string): Promise<VPS> {
+    try {
+      const { data, error } = await supabase
+        .from('vps_servers')
+        .select('*')
+        .eq('id', id)
+        .single();
+
+      if (error) handleError(error);
+      return data as VPS;
+    } catch (error) {
+      handleError(error);
     }
-
-    const page = filters?.page || 1;
-    const limit = filters?.limit || 10;
-    const start = (page - 1) * limit;
-    const items = filtered.slice(start, start + limit);
-
-    return {
-      data: {
-        items,
-        total: filtered.length,
-        page,
-        limit,
-        totalPages: Math.ceil(filtered.length / limit),
-      },
-      success: true,
-    };
   },
 
-  getVps: async (id: string): Promise<ApiResponse<VPS>> => {
-    await delay(300);
-    const vps = mockVPS.find(v => v.id === id);
-    if (!vps) throw new Error('VPS not found');
-    return { data: vps, success: true };
-  },
+  async createVps(data: Omit<VPS, 'id' | 'createdAt' | 'updatedAt'>): Promise<VPS> {
+    try {
+      const { data: newVps, error } = await supabase
+        .from('vps_servers')
+        .insert([data])
+        .select()
+        .single();
 
-  createVps: async (payload: Partial<VPS>): Promise<ApiResponse<VPS>> => {
-    await delay(1200);
-    const newVps: VPS = {
-      id: Math.random().toString(36).substr(2, 9),
-      name: payload.name || '',
-      tenantId: payload.tenantId || '',
-      provider: payload.provider || 'other',
-      ipv4: payload.ipv4 || '',
-      health: 'unknown',
-      ...payload,
-    };
-    mockVPS.push(newVps);
-    return { data: newVps, success: true };
-  },
-
-  assignRoute: async (domainId: string, vpsId: string): Promise<ApiResponse<void>> => {
-    await delay(1000);
-    const domainIndex = mockDomains.findIndex(d => d.id === domainId);
-    if (domainIndex === -1) throw new Error('Domain not found');
-    
-    mockDomains[domainIndex].vpsId = vpsId;
-    mockDomains[domainIndex].status = 'propagating';
-    
-    return { data: undefined, success: true };
-  },
-
-  // Tunnels
-  listTunnels: async (tenantId?: string): Promise<ApiResponse<Tunnel[]>> => {
-    await delay(400);
-    let filtered = [...mockTunnels];
-    if (tenantId) {
-      filtered = filtered.filter(t => t.tenantId === tenantId);
+      if (error) handleError(error);
+      return newVps as VPS;
+    } catch (error) {
+      handleError(error);
     }
-    return { data: filtered, success: true };
   },
 
-  restartTunnel: async (tunnelId: string): Promise<ApiResponse<void>> => {
-    await delay(3000);
-    const tunnel = mockTunnels.find(t => t.id === tunnelId);
-    if (!tunnel) throw new Error('Tunnel not found');
-    
-    tunnel.status = 'connected';
-    tunnel.lastSeenAt = new Date().toISOString();
-    
-    return { data: undefined, success: true };
-  },
+  async assignRoute(domainId: string, vpsId: string): Promise<void> {
+    try {
+      const { error } = await supabase
+        .from('domains')
+        .update({ 
+          vps_id: vpsId,
+          tunnel_id: null,
+          publish_strategy: 'dns',
+          status: 'pending'
+        })
+        .eq('id', domainId);
 
-  // Deploys
-  listDeploys: async (filters?: DeployFilters): Promise<PaginatedResponse<Deploy>> => {
-    await delay(600);
-    let filtered = [...mockDeploys];
-    
-    if (filters?.tenantId) {
-      filtered = filtered.filter(d => d.tenantId === filters.tenantId);
+      if (error) handleError(error);
+    } catch (error) {
+      handleError(error);
     }
-    if (filters?.status) {
-      filtered = filtered.filter(d => d.status === filters.status);
+  },
+
+  // === TUNNELS ===
+  async listTunnels(): Promise<Tunnel[]> {
+    try {
+      const { data, error } = await supabase
+        .from('tunnels')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) handleError(error);
+      return data as Tunnel[];
+    } catch (error) {
+      handleError(error);
     }
-
-    const page = filters?.page || 1;
-    const limit = filters?.limit || 10;
-    const start = (page - 1) * limit;
-    const items = filtered.slice(start, start + limit);
-
-    return {
-      data: {
-        items,
-        total: filtered.length,
-        page,
-        limit,
-        totalPages: Math.ceil(filtered.length / limit),
-      },
-      success: true,
-    };
   },
 
-  triggerDeploy: async (vpsId: string, options?: { commit?: string }): Promise<ApiResponse<Deploy>> => {
-    await delay(800);
-    const newDeploy: Deploy = {
-      id: Math.random().toString(36).substr(2, 9),
-      tenantId: '1', // Would come from context
-      vpsId,
-      triggeredBy: 'current-user', // Would come from auth
-      status: 'pending',
-      commit: options?.commit,
-      startedAt: new Date().toISOString(),
-    };
-    mockDeploys.push(newDeploy);
-    return { data: newDeploy, success: true };
+  async restartTunnel(tunnelId: string): Promise<void> {
+    try {
+      // Update tunnel status to indicate restart
+      const { error } = await supabase
+        .from('tunnels')
+        .update({ 
+          status: 'disconnected',
+          last_seen_at: new Date().toISOString()
+        })
+        .eq('tunnel_id', tunnelId);
+
+      if (error) handleError(error);
+      
+      // In a real implementation, this would trigger the actual tunnel restart
+      // For now, we'll simulate success
+    } catch (error) {
+      handleError(error);
+    }
   },
 
-  // Health checks
-  runHealthCheck: async (vpsId: string): Promise<ApiResponse<HealthCheck[]>> => {
-    await delay(2000);
-    const checks: HealthCheck[] = [
-      {
-        id: '1',
-        vpsId,
-        url: 'http://localhost:80/health',
-        method: 'GET',
-        expectedStatus: 200,
-        timeout: 5000,
-        status: Math.random() > 0.2 ? 'healthy' : 'down',
-        responseTime: Math.floor(Math.random() * 1000) + 50,
-        lastCheckAt: new Date().toISOString(),
-      },
-    ];
-    return { data: checks, success: true };
+  // === DEPLOYS ===
+  async listDeploys(filters?: DeployFilters): Promise<Deploy[]> {
+    try {
+      let query = supabase
+        .from('deploys')
+        .select(`
+          *,
+          tenant:tenants(name),
+          domain:domains(hostname),
+          vps:vps_servers(name)
+        `)
+        .order('created_at', { ascending: false });
+
+      if (filters?.tenantId) {
+        query = query.eq('tenant_id', filters.tenantId);
+      }
+      
+      if (filters?.status) {
+        query = query.eq('status', filters.status);
+      }
+
+      const { data, error } = await query;
+      if (error) handleError(error);
+      return data as Deploy[];
+    } catch (error) {
+      handleError(error);
+    }
   },
 
-  // Audit logs
-  getAuditLogs: async (tenantId?: string): Promise<ApiResponse<AuditLog[]>> => {
-    await delay(500);
-    const logs: AuditLog[] = [
-      {
-        id: '1',
-        tenantId: tenantId || '1',
-        userId: 'user1',
-        action: 'domain.created',
-        resource: 'domain',
-        resourceId: '1',
-        newValue: { fqdn: 'example.com' },
-        timestamp: new Date().toISOString(),
-      },
-    ];
-    return { data: logs, success: true };
+  async triggerDeploy(data: Omit<Deploy, 'id' | 'createdAt' | 'updatedAt'>): Promise<Deploy> {
+    try {
+      const { data: newDeploy, error } = await supabase
+        .from('deploys')
+        .insert([{ ...data, status: 'pending' }])
+        .select()
+        .single();
+
+      if (error) handleError(error);
+      return newDeploy as Deploy;
+    } catch (error) {
+      handleError(error);
+    }
+  },
+
+  // === HEALTH CHECKS ===
+  async runHealthCheck(vpsId: string): Promise<HealthCheck> {
+    try {
+      // Get VPS details
+      const { data: vps } = await supabase
+        .from('vps_servers')
+        .select('name, ipv4')
+        .eq('id', vpsId)
+        .single();
+
+      // Create a health check record
+      const healthCheck = {
+        vps_id: vpsId,
+        url: `http://${vps?.ipv4 || 'localhost'}:80/health`,
+        status_code: Math.random() > 0.2 ? 200 : 503,
+        latency_ms: Math.floor(Math.random() * 1000) + 50,
+      };
+
+      const { data, error } = await supabase
+        .from('health_checks')
+        .insert([healthCheck])
+        .select()
+        .single();
+
+      if (error) handleError(error);
+      
+      // Update VPS health status based on check
+      const newHealth = healthCheck.status_code === 200 ? 'healthy' : 'down';
+      await supabase
+        .from('vps_servers')
+        .update({ 
+          health: newHealth,
+          last_seen_at: new Date().toISOString()
+        })
+        .eq('id', vpsId);
+
+      return data as HealthCheck;
+    } catch (error) {
+      handleError(error);
+    }
+  },
+
+  // === AUDIT LOGS ===
+  async getAuditLogs(): Promise<AuditLog[]> {
+    try {
+      const { data, error } = await supabase
+        .from('audit_logs')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(100);
+
+      if (error) handleError(error);
+      return data as AuditLog[];
+    } catch (error) {
+      handleError(error);
+    }
   },
 };

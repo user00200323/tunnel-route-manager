@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
-import { getCurrentUser, logout } from "@/lib/auth-mock";
+import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -10,28 +10,26 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { 
   Server, 
   Globe, 
   Settings, 
-  User, 
   LogOut, 
   BarChart3,
   Moon,
   Sun,
-  Plus
+  Plus,
+  Users
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Separator } from "@/components/ui/separator";
 
 export default function ProtectedLayout() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { toast } = useToast();
   const { theme, setTheme } = useTheme();
-  const user = getCurrentUser();
+  const { user, signOut } = useAuth();
 
   useEffect(() => {
     if (!user) {
@@ -43,17 +41,19 @@ export default function ProtectedLayout() {
     return null;
   }
 
-  const handleLogout = () => {
-    logout();
-    toast({
-      title: "Logout realizado",
-      description: "Você foi desconectado com sucesso.",
-    });
-    navigate("/login");
+  const handleLogout = async () => {
+    try {
+      await signOut();
+      toast.success("Logout realizado com sucesso!");
+      navigate("/login");
+    } catch (error) {
+      toast.error("Erro ao fazer logout");
+    }
   };
 
   const navigation = [
     { name: "Dashboard", href: "/", icon: BarChart3 },
+    { name: "Tenants", href: "/tenants", icon: Users },
     { name: "Domínios", href: "/domains", icon: Globe },
     { name: "VPS", href: "/vps", icon: Server },
     { name: "Configurações", href: "/settings", icon: Settings },
@@ -62,6 +62,10 @@ export default function ProtectedLayout() {
   const getBreadcrumb = () => {
     const path = location.pathname;
     if (path === "/") return "Dashboard";
+    if (path.startsWith("/tenants")) {
+      if (path === "/tenants") return "Tenants";
+      return "Detalhes do Tenant";
+    }
     if (path.startsWith("/domains")) {
       if (path === "/domains") return "Domínios";
       if (path === "/domains/new") return "Novo Domínio";
@@ -152,7 +156,7 @@ export default function ProtectedLayout() {
                   <Button variant="ghost" className="h-9 w-9 p-0">
                     <Avatar className="h-8 w-8">
                       <AvatarFallback>
-                        {user.email.charAt(0).toUpperCase()}
+                        {user.email?.charAt(0).toUpperCase() || 'U'}
                       </AvatarFallback>
                     </Avatar>
                   </Button>
@@ -161,9 +165,7 @@ export default function ProtectedLayout() {
                   <DropdownMenuLabel>
                     <div className="flex flex-col space-y-1">
                       <p className="text-sm font-medium">{user.email}</p>
-                      <p className="text-xs text-muted-foreground capitalize">
-                        {user.role}
-                      </p>
+                      <p className="text-xs text-muted-foreground">Admin</p>
                     </div>
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />

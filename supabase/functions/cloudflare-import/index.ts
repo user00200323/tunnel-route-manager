@@ -233,12 +233,23 @@ async function importZonesToDatabase(zones: CloudflareZone[], tunnels: Cloudflar
     }
 
     // Try to find matching tunnel by domain name or similar naming pattern
+    // Enhanced logic to better match domains like merlibre.shop and mercallbr.shop to vps-merlibre
     let tunnelId = null
     for (const [tunnelName, cfTunnelId] of tunnelMap) {
+      const domainBase = zone.name.split('.')[0] // e.g., "merlibre" from "merlibre.shop"
+      const tunnelBase = tunnelName.replace('vps-', '').replace('-', '') // e.g., "merlibre" from "vps-merlibre"
+      
+      // Check for exact matches, partial matches, and common prefixes
       if (tunnelName.includes(zone.name.replace('.', '-')) || 
-          tunnelName.includes(zone.name.split('.')[0]) ||
-          zone.name.includes(tunnelName)) {
+          tunnelName.includes(domainBase) ||
+          zone.name.includes(tunnelName) ||
+          domainBase.includes(tunnelBase) ||
+          tunnelBase.includes(domainBase) ||
+          // Special case for similar domain names (mercallbr vs merlibre)
+          (domainBase.length >= 6 && tunnelBase.length >= 6 && 
+           domainBase.substring(0, 6) === tunnelBase.substring(0, 6))) {
         tunnelId = cfTunnelId
+        console.log(`Domain ${zone.name} matched to tunnel ${tunnelName} (${cfTunnelId})`)
         break
       }
     }

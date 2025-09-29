@@ -13,6 +13,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { ArrowLeft, X, Globe, Server, Info } from "lucide-react";
 import { toast } from "sonner";
 import { Api } from "@/services/api";
+import { supabase } from "@/integrations/supabase/client";
 import { domainSchema } from "@/schemas";
 import type { z } from "zod";
 
@@ -43,7 +44,7 @@ export default function DomainsNewPage() {
   });
 
   const createDomainMutation = useMutation({
-    mutationFn: (data: DomainFormData) => {
+    mutationFn: async (data: DomainFormData) => {
       // Map form data to API format
       const apiData = {
         hostname: data.hostname,
@@ -57,10 +58,36 @@ export default function DomainsNewPage() {
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
-      return Api.createDomain(apiData);
+      
+      // Create the domain
+      const domain = await Api.createDomain(apiData);
+      
+      // If DNS strategy, configure Cloudflare DNS and update VPS Caddyfile
+      if (publishStrategy === 'dns' && data.vpsId) {
+        try {
+          // Call cloudflare-dns function to setup DNS records
+          await supabase.functions.invoke('cloudflare-dns', {
+            body: {
+              action: 'create_records',
+              domain: data.hostname,
+              vpsId: data.vpsId
+            }
+          });
+          
+          // Update VPS Caddyfile to include the new domain
+          await Api.updateVpsCaddyfile(data.vpsId);
+          
+          toast.success("DNS configurado e Caddy atualizado!");
+        } catch (error) {
+          console.error('Error configuring DNS/VPS:', error);
+          toast.warning("Domínio criado, mas houve erro na configuração automática");
+        }
+      }
+      
+      return domain;
     },
     onSuccess: (domain) => {
-      toast.success("Domínio criado com sucesso!");
+      toast.success("Domínio criado e configurado com sucesso!");
       navigate(`/domains/${domain.id}`);
     },
     onError: (error) => {

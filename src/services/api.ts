@@ -469,6 +469,19 @@ export const Api = {
     }
   },
 
+  // === VPS CADDYFILE MANAGEMENT ===
+  async updateVpsCaddyfile(vpsId: string): Promise<any> {
+    try {
+      const { data, error } = await supabase.functions.invoke('vps-management', {
+        body: { action: 'update_caddyfile', vpsId }
+      });
+      if (error) throw error;
+      return data;
+    } catch (error) {
+      handleError(error);
+    }
+  },
+
   // === CLOUDFLARE IMPORT ===
   async importCloudflareDomainsSync(): Promise<any> {
     try {

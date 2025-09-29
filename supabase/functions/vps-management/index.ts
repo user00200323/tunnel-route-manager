@@ -90,15 +90,35 @@ networks:
 `;
 }
 
-async function executeSSHCommand(vps: any, command: string): Promise<string> {
-  // In a real implementation, this would use SSH to execute commands
-  // For now, we'll simulate the SSH execution
-  console.log(`Simulating SSH command on ${vps.name} (${vps.ipv4}): ${command}`);
+async function executeVpsCommand(vps: any, action: string, data?: any): Promise<string> {
+  // Real HTTP call to VPS agent
+  const agentUrl = `http://${vps.ipv4}:8888`;
   
-  // Simulate command execution delay
-  await new Promise(resolve => setTimeout(resolve, 1000));
-  
-  return `Command executed successfully on ${vps.name}`;
+  try {
+    console.log(`Executing VPS command on ${vps.name} (${vps.ipv4}): ${action}`);
+    
+    const response = await fetch(`${agentUrl}/${action}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${Deno.env.get('VPS_AGENT_TOKEN') || 'default-token'}`
+      },
+      body: JSON.stringify(data || {}),
+      signal: AbortSignal.timeout(30000) // 30 second timeout
+    });
+
+    if (!response.ok) {
+      throw new Error(`VPS agent error: ${response.status} ${response.statusText}`);
+    }
+
+    const result = await response.text();
+    console.log(`VPS command result: ${result}`);
+    return result;
+    
+  } catch (error) {
+    console.error(`VPS command failed on ${vps.name}:`, error);
+    throw new Error(`Failed to execute command on VPS: ${(error as Error).message}`);
+  }
 }
 
 serve(async (req) => {
@@ -143,12 +163,11 @@ serve(async (req) => {
 
         const caddyfile = generateCaddyfile(domainList);
         
-        // Write Caddyfile to VPS
-        const writeCommand = `echo '${caddyfile.replace(/'/g, "'\\''")}' > /opt/app/Caddyfile`;
-        await executeSSHCommand(vps, writeCommand);
-        
-        // Reload Caddy
-        await executeSSHCommand(vps, 'cd /opt/app && docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile');
+        // Update Caddyfile via VPS agent
+        await executeVpsCommand(vps, 'update-caddy', { 
+          domains: domainList,
+          caddyfile 
+        });
         
         result = { 
           message: 'Caddyfile updated and reloaded',
@@ -158,13 +177,12 @@ serve(async (req) => {
         break;
 
       case 'reload_caddy':
-        await executeSSHCommand(vps, 'cd /opt/app && docker compose restart caddy');
+        await executeVpsCommand(vps, 'reload-caddy');
         result = { message: 'Caddy reloaded successfully' };
         break;
 
       case 'restart_services':
-        // Restart all services via docker compose
-        await executeSSHCommand(vps, 'cd /opt/app && docker compose restart');
+        await executeVpsCommand(vps, 'restart-services');
         result = { message: 'All services restarted successfully' };
         break;
 
@@ -173,7 +191,7 @@ serve(async (req) => {
           throw new Error('No tunnel configured for this VPS');
         }
         
-        await executeSSHCommand(vps, 'cd /opt/app && docker compose restart cloudflared');
+        await executeVpsCommand(vps, 'restart-tunnel');
         result = { message: 'Cloudflare tunnel restarted successfully' };
         break;
 
@@ -198,8 +216,7 @@ serve(async (req) => {
 
         // Execute deploy script
         try {
-          await executeSSHCommand(vps, 'cd /opt/app && ./deploy.sh');
-          await executeSSHCommand(vps, 'cd /opt/app && docker compose up -d --pull always');
+          await executeVpsCommand(vps, 'deploy', { commitSha });
           
           // Update deploy status
           await supabase
@@ -234,29 +251,12 @@ serve(async (req) => {
         const dockerCompose = generateDockerCompose(vps, setupDomains);
         const setupCaddyfile = generateCaddyfile(setupDomains);
 
-        // Create directories and files
-        await executeSSHCommand(vps, 'mkdir -p /opt/app');
-        
-        // Write docker-compose.yml
-        const composeCommand = `echo '${dockerCompose.replace(/'/g, "'\\''")}' > /opt/app/docker-compose.yml`;
-        await executeSSHCommand(vps, composeCommand);
-        
-        // Write Caddyfile
-        const caddyCommand = `echo '${setupCaddyfile.replace(/'/g, "'\\''")}' > /opt/app/Caddyfile`;
-        await executeSSHCommand(vps, caddyCommand);
-        
-        // Create deploy script
-        const deployScript = `#!/bin/bash
-set -e
-echo "Starting deployment..."
-git pull origin main || echo "No git repository found"
-echo "Deployment completed"
-`;
-        const scriptCommand = `echo '${deployScript}' > /opt/app/deploy.sh && chmod +x /opt/app/deploy.sh`;
-        await executeSSHCommand(vps, scriptCommand);
-        
-        // Start services
-        await executeSSHCommand(vps, 'cd /opt/app && docker compose up -d');
+        // Setup VPS via agent
+        await executeVpsCommand(vps, 'setup', {
+          domains: setupDomains,
+          dockerCompose,
+          caddyfile: setupCaddyfile
+        });
         
         result = { 
           message: 'VPS setup completed successfully',
@@ -268,8 +268,7 @@ echo "Deployment completed"
         break;
 
       case 'check_status':
-        // Check Docker services status
-        const statusOutput = await executeSSHCommand(vps, 'cd /opt/app && docker compose ps --format json');
+        const statusOutput = await executeVpsCommand(vps, 'status');
         
         result = { 
           message: 'VPS status checked',

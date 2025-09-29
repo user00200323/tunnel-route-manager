@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -21,17 +21,30 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Plus, Search, Globe, ArrowUpDown } from "lucide-react";
+import { Plus, Search, Globe, ArrowUpDown, Download } from "lucide-react";
 import { HealthPill } from "@/components/HealthPill";
 import type { Domain, VPS } from "@/types";
 import { Api } from "@/services/api";
+import { toast } from "sonner";
 
 export default function DomainsPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [filters, setFilters] = useState({
     query: "",
     vpsId: "",
     active: undefined as boolean | undefined,
+  });
+
+  const importMutation = useMutation({
+    mutationFn: () => Api.importCloudflareDomainsSync(),
+    onSuccess: () => {
+      toast.success("Domínios importados com sucesso da Cloudflare!");
+      queryClient.invalidateQueries({ queryKey: ["domains"] });
+    },
+    onError: (error) => {
+      toast.error("Erro ao importar domínios: " + error.message);
+    },
   });
   
   const { data: domains = [], isLoading: domainsLoading } = useQuery({
@@ -100,10 +113,20 @@ export default function DomainsPage() {
             Gerencie os domínios e suas rotas
           </p>
         </div>
-        <Button onClick={() => navigate("/domains/new")}>
-          <Plus className="h-4 w-4 mr-2" />
-          Novo Domínio
-        </Button>
+        <div className="flex gap-2">
+          <Button 
+            variant="outline" 
+            onClick={() => importMutation.mutate()}
+            disabled={importMutation.isPending}
+          >
+            <Download className="h-4 w-4 mr-2" />
+            {importMutation.isPending ? "Importando..." : "Importar da Cloudflare"}
+          </Button>
+          <Button onClick={() => navigate("/domains/new")}>
+            <Plus className="h-4 w-4 mr-2" />
+            Novo Domínio
+          </Button>
+        </div>
       </div>
 
       {/* Filters */}

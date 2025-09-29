@@ -415,4 +415,15 @@ export const Api = {
       handleError(error);
     }
   },
+
+  // === CLOUDFLARE IMPORT ===
+  async importCloudflareDomainsSync(): Promise<any> {
+    try {
+      const { data, error } = await supabase.functions.invoke('cloudflare-import')
+      if (error) throw error
+      return data
+    } catch (error) {
+      handleError(error)
+    }
+  },
 };

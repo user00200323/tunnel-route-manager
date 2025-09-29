@@ -22,21 +22,21 @@ export function HealthStatusBadge({ status, size = "default" }: HealthStatusProp
         return {
           variant: "default" as const,
           icon: CheckCircle,
-          label: "Saudável",
+          label: "Ativo",
           className: "bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-400 dark:border-emerald-800",
         };
       case "degraded":
         return {
           variant: "secondary" as const,
           icon: AlertTriangle,
-          label: "Degradado",
+          label: "Alerta",
           className: "bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800",
         };
       case "down":
         return {
           variant: "destructive" as const,
           icon: XCircle,
-          label: "Inativo",
+          label: "Fora do Ar",
           className: "bg-red-100 text-red-800 border-red-200 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800",
         };
       case "unknown":

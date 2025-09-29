@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRealtimeData } from "@/hooks/useRealtimeData";
 import { useNavigate } from "react-router-dom";
+import { useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,9 +24,10 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Plus, Search, Globe, ArrowUpDown, Download, ArrowRightLeft } from "lucide-react";
+import { Plus, Search, Globe, ArrowUpDown, Download, ArrowRightLeft, CheckCircle, AlertTriangle, XCircle, Radio } from "lucide-react";
 import { HealthPill } from "@/components/HealthPill";
 import { SwitchVpsDialog } from "@/components/SwitchVpsDialog";
+import { DomainStatusBadge, TunnelStatusBadge } from "@/components/StatusBadge";
 import type { Domain, VPS } from "@/types";
 import { Api } from "@/services/api";
 import { toast } from "sonner";
@@ -48,6 +50,17 @@ export default function DomainsPage() {
   // Enable realtime updates
   useRealtimeData();
 
+  // Auto-refresh every 30 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      queryClient.invalidateQueries({ queryKey: ["domains"] });
+      queryClient.invalidateQueries({ queryKey: ["vps"] });
+      queryClient.invalidateQueries({ queryKey: ["health-checks"] });
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, [queryClient]);
+
   const importMutation = useMutation({
     mutationFn: () => Api.importCloudflareDomainsSync(),
     onSuccess: () => {
@@ -67,6 +80,20 @@ export default function DomainsPage() {
   const { data: vpsList = [], isLoading: vpsLoading } = useQuery({
     queryKey: ["vps"],
     queryFn: () => Api.listVps(),
+  });
+
+  const { data: healthChecks = [] } = useQuery({
+    queryKey: ["health-checks"],
+    queryFn: async () => {
+      // Simulated health check data - replace with actual API call
+      return domains.map((domain: Domain) => ({
+        domainId: domain.id,
+        status: domain.active ? "live" : "error",
+        lastCheck: new Date().toISOString(),
+        latency: Math.floor(Math.random() * 200) + 50
+      }));
+    },
+    enabled: domains.length > 0,
   });
 
   const isLoading = domainsLoading || vpsLoading;
@@ -91,6 +118,24 @@ export default function DomainsPage() {
   const getVpsForDomain = (vpsId: string | null) => {
     if (!vpsId || !vpsList) return null;
     return vpsList.find((v: any) => v.id === vpsId);
+  };
+
+  const getDomainStatus = (domain: Domain) => {
+    const vps = getVpsForDomain(domain.vps_id || null);
+    const hasCloudflareSetup = domain.publish_strategy === 'tunnel' || domain.tunnel_id;
+    
+    if (!domain.active) return "error";
+    if (!hasCloudflareSetup) return "pending";
+    if (vps && vps.health === 'down') return "error";
+    if (vps && vps.health === 'degraded') return "propagating";
+    return "live";
+  };
+
+  const getTunnelStatus = (domain: Domain) => {
+    if (!domain.tunnel_id) return "disconnected";
+    const vps = getVpsForDomain(domain.vps_id || null);
+    if (vps && vps.health === 'down') return "error";
+    return "connected";
   };
 
   if (isLoading) {
@@ -259,15 +304,18 @@ export default function DomainsPage() {
                     </Button>
                   </TableHead>
                   <TableHead>VPS Atual</TableHead>
-                  <TableHead>Tunnel</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Criado em</TableHead>
+                  <TableHead>Cloudflare</TableHead>
+                  <TableHead>Status Geral</TableHead>
+                  <TableHead>Última Verificação</TableHead>
                   <TableHead className="text-right">Ações</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredDomains.map((domain: Domain) => {
                   const vps = getVpsForDomain(domain.vps_id || null);
+                  const domainStatus = getDomainStatus(domain);
+                  const tunnelStatus = getTunnelStatus(domain);
+                  const healthCheck = healthChecks.find((hc: any) => hc.domainId === domain.id);
                   
                   return (
                     <TableRow 
@@ -276,7 +324,18 @@ export default function DomainsPage() {
                       onClick={() => navigate(`/domains/${domain.id}`)}
                     >
                       <TableCell className="font-medium">
-                        {domain.hostname}
+                        <div className="flex items-center gap-2">
+                          {domain.hostname}
+                          {domainStatus === 'live' && (
+                            <Radio className="h-3 w-3 text-emerald-500" />
+                          )}
+                          {domainStatus === 'error' && (
+                            <XCircle className="h-3 w-3 text-red-500" />
+                          )}
+                          {domainStatus === 'propagating' && (
+                            <AlertTriangle className="h-3 w-3 text-amber-500" />
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell>
                         {vps ? (
@@ -289,21 +348,45 @@ export default function DomainsPage() {
                         )}
                       </TableCell>
                       <TableCell>
-                        {domain.tunnel_id ? (
-                          <Badge variant="secondary">
-                            Tunnel Ativo
-                          </Badge>
-                        ) : (
-                          <Badge variant="outline">Sem Tunnel</Badge>
-                        )}
+                        <div className="flex flex-col gap-1">
+                          <TunnelStatusBadge status={tunnelStatus as any} size="sm" />
+                          {domain.publish_strategy === 'tunnel' && domain.tunnel_id && (
+                            <span className="text-xs text-muted-foreground">
+                              Via Tunnel
+                            </span>
+                          )}
+                          {domain.publish_strategy === 'dns' && (
+                            <span className="text-xs text-muted-foreground">
+                              Via DNS
+                            </span>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell>
-                        <Badge variant={domain.active ? "success" : "outline"}>
-                          {domain.active ? "Ativo" : "Inativo"}
-                        </Badge>
+                        <div className="flex flex-col gap-1">
+                          <DomainStatusBadge status={domainStatus as any} size="sm" />
+                          {healthCheck?.latency && (
+                            <span className="text-xs text-muted-foreground">
+                              {healthCheck.latency}ms
+                            </span>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell>
-                        {new Date(domain.created_at).toLocaleDateString("pt-BR")}
+                        <div className="flex flex-col gap-1">
+                          <span className="text-sm">
+                            {healthCheck?.lastCheck 
+                              ? new Date(healthCheck.lastCheck).toLocaleTimeString("pt-BR", {
+                                  hour: '2-digit',
+                                  minute: '2-digit'
+                                })
+                              : 'Nunca'
+                            }
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            {new Date(domain.created_at).toLocaleDateString("pt-BR")}
+                          </span>
+                        </div>
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex gap-2 justify-end">

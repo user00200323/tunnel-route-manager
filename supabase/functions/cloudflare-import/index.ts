@@ -236,12 +236,32 @@ async function importZonesToDatabase(zones: CloudflareZone[], tunnels: Cloudflar
       }
     }
 
+    // Determine publish_strategy based on tunnel presence
+    // CRITICAL: Respect the valid_publish_strategy constraint
+    let publishStrategy: 'dns' | 'tunnel'
+    let finalVpsId: string | null
+    let finalTunnelId: string | null
+    
+    if (tunnelId) {
+      // Domain uses tunnel → strategy = 'tunnel', vps_id = NULL
+      publishStrategy = 'tunnel'
+      finalVpsId = null
+      finalTunnelId = tunnelId
+      console.log(`Domain ${zone.name} assigned to tunnel ${tunnelId}`)
+    } else {
+      // Domain uses DNS → strategy = 'dns', tunnel_id = NULL
+      publishStrategy = 'dns'
+      finalVpsId = vps.id
+      finalTunnelId = null
+    }
+
     return {
       hostname: zone.name,
       fqdn: zone.name,
       tenant_id: tenant.id,
-      vps_id: vps.id,
-      tunnel_id: tunnelId,
+      publish_strategy: publishStrategy,
+      vps_id: finalVpsId,
+      tunnel_id: finalTunnelId,
       status: domainStatus,
       active: zone.status === 'active',
       created_at: zone.created_on,

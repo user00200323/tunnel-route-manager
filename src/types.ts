@@ -1,121 +1,99 @@
-export type AppRole = 'admin' | 'operator' | 'viewer';
+// User and Role types
+export type AppRole = 'admin';
 
 export type User = {
   id: string;
   email: string;
-  name?: string;
   role: AppRole;
-  tenantId?: string;
-  createdAt: string;
-  lastSeenAt?: string;
+  created_at: string;
 };
 
+// Core Entity Types
 export type Tenant = {
   id: string;
   name: string;
-  slug: string;
-  createdAt: string;
-  ownerId: string;
-  settings?: {
-    allowMultipleVps?: boolean;
-    autoFailover?: boolean;
-  };
+  created_at: string;
+  updated_at: string;
 };
 
 export type VPS = {
   id: string;
   name: string;
-  tenantId: string;
-  provider: 'digitalocean' | 'aws' | 'gcp' | 'azure' | 'other';
-  ipv4: string;
+  provider: 'digitalocean' | 'aws' | 'linode' | 'vultr' | 'other';
+  tunnel_id?: string;
+  ipv4?: string;
   ipv6?: string;
   region?: string;
-  lastSeenAt?: string;
   health: 'healthy' | 'degraded' | 'down' | 'unknown';
-  metadata?: {
-    instanceType?: string;
-    cost?: number;
-    tags?: string[];
-  };
+  last_seen_at?: string;
+  notes?: string;
+  created_at: string;
+  updated_at: string;
 };
 
 export type Domain = {
   id: string;
-  fqdn: string;
-  tenantId: string;
-  type: 'apex' | 'www' | 'subdomain';
-  publishStrategy: 'dns' | 'tunnel';
-  vpsId?: string;
-  tunnelId?: string;
+  hostname: string;
+  tenant_id: string;
+  type: 'apex' | 'www' | 'custom';
+  publish_strategy: 'dns' | 'tunnel';
+  vps_id?: string;
+  tunnel_id?: string;
   status: 'pending' | 'propagating' | 'live' | 'error';
-  lastCheckAt?: string;
-  errorMessage?: string;
-  dnsProvider?: 'cloudflare' | 'route53' | 'other';
-  createdAt: string;
-  metadata?: {
-    ssl?: boolean;
-    wwwRedirect?: boolean;
-  };
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+  last_check_at?: string;
+  error_message?: string;
 };
 
 export type Tunnel = {
   id: string;
+  tunnel_id: string;
   name: string;
-  tenantId: string;
-  provider: 'cloudflared';
-  tunnelToken?: string;
+  provider: string;
   status: 'connected' | 'disconnected' | 'error';
-  lastSeenAt?: string;
-  connectorId?: string;
-  metadata?: {
-    version?: string;
-    location?: string;
-  };
+  last_seen_at?: string;
+  created_at: string;
+  updated_at: string;
 };
 
 export type Deploy = {
   id: string;
-  tenantId: string;
-  domainId?: string;
-  vpsId: string;
-  triggeredBy: string;
+  tenant_id: string;
+  domain_id?: string;
+  vps_id?: string;
+  commit_hash?: string;
   status: 'pending' | 'running' | 'success' | 'failed';
-  commit?: string;
   logs?: string;
-  startedAt: string;
-  finishedAt?: string;
-  duration?: number;
-};
-
-export type AuditLog = {
-  id: string;
-  tenantId: string;
-  userId: string;
-  action: string;
-  resource: 'domain' | 'vps' | 'tunnel' | 'user' | 'tenant';
-  resourceId: string;
-  oldValue?: any;
-  newValue?: any;
-  timestamp: string;
-  ipAddress?: string;
-  userAgent?: string;
+  created_at: string;
+  updated_at: string;
 };
 
 export type HealthCheck = {
   id: string;
-  vpsId: string;
-  domainId?: string;
+  vps_id: string;
+  domain_id?: string;
   url: string;
-  method: 'GET' | 'POST' | 'HEAD';
-  expectedStatus: number;
-  timeout: number;
-  status: 'healthy' | 'degraded' | 'down';
-  responseTime?: number;
-  lastCheckAt: string;
-  errorMessage?: string;
+  status_code?: number;
+  latency_ms?: number;
+  checked_at: string;
 };
 
-// API Response types
+export type AuditLog = {
+  id: string;
+  user_id?: string;
+  action: string;
+  entity_type: string;
+  entity_id?: string;
+  old_values?: any;
+  new_values?: any;
+  ip_address?: string;
+  user_agent?: string;
+  created_at: string;
+};
+
+// API Response Types
 export type ApiResponse<T> = {
   data: T;
   success: boolean;
@@ -131,11 +109,10 @@ export type PaginatedResponse<T> = ApiResponse<{
   totalPages: number;
 }>;
 
-// Filter types
+// Filter Types for API queries
 export type DomainFilters = {
   tenantId?: string;
   status?: Domain['status'];
-  publishStrategy?: Domain['publishStrategy'];
   search?: string;
   page?: number;
   limit?: number;
@@ -143,8 +120,8 @@ export type DomainFilters = {
 
 export type VpsFilters = {
   tenantId?: string;
-  provider?: VPS['provider'];
   health?: VPS['health'];
+  provider?: VPS['provider'];
   search?: string;
   page?: number;
   limit?: number;
@@ -152,8 +129,8 @@ export type VpsFilters = {
 
 export type DeployFilters = {
   tenantId?: string;
+  vpsId?: string;
   status?: Deploy['status'];
-  triggeredBy?: string;
   page?: number;
   limit?: number;
 };

@@ -1,249 +1,288 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Form,
-  FormControl,
-  FormDescription,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { useToast } from "@/hooks/use-toast";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { ArrowLeft, X, Globe, Server, Info } from "lucide-react";
+import { toast } from "sonner";
+import { Api } from "@/services/api";
 import { domainSchema } from "@/schemas";
-import { HealthPill } from "@/components/HealthPill";
-import { ArrowLeft, Globe } from "lucide-react";
-import type { VPS } from "@/models";
 import type { z } from "zod";
 
 type DomainFormData = z.infer<typeof domainSchema>;
 
-const fetchVpsList = async () => {
-  const vpsList = await import("@/mocks/vps.json");
-  return vpsList.default;
-};
-
-const createDomain = async (data: DomainFormData) => {
-  // Mock API call
-  await new Promise(resolve => setTimeout(resolve, 1000));
-  return { id: "new-domain", ...data };
-};
-
 export default function DomainsNewPage() {
   const navigate = useNavigate();
-  const { toast } = useToast();
-  const queryClient = useQueryClient();
+  const [publishStrategy, setPublishStrategy] = useState<'dns' | 'tunnel'>('dns');
+
+  // Fetch VPS list for the select dropdown
+  const { data: vpsData = [] } = useQuery({
+    queryKey: ['vps'],
+    queryFn: () => Api.listVps()
+  });
+
+  const { data: tenants = [] } = useQuery({
+    queryKey: ['tenants'],
+    queryFn: () => Api.listTenants()
+  });
 
   const form = useForm<DomainFormData>({
     resolver: zodResolver(domainSchema),
     defaultValues: {
       hostname: "",
+      type: "apex",
+      publish_strategy: "dns",
       active: true,
-      currentVpsId: undefined,
     },
   });
 
-  const { data: vpsList, isLoading: vpsLoading } = useQuery({
-    queryKey: ["vps"],
-    queryFn: fetchVpsList,
-  });
-
-  const createMutation = useMutation({
-    mutationFn: createDomain,
-    onSuccess: (data) => {
-      toast({
-        title: "Domínio criado com sucesso!",
-        description: `O domínio ${data.hostname} foi adicionado.`,
-      });
-      queryClient.invalidateQueries({ queryKey: ["domains"] });
-      navigate(`/domains/${data.id}`);
+  const createDomainMutation = useMutation({
+    mutationFn: (data: DomainFormData) => {
+      // Map form data to API format
+      const apiData = {
+        hostname: data.hostname,
+        tenant_id: tenants[0]?.id || '', // Use first tenant or handle properly
+        type: data.type,
+        publish_strategy: publishStrategy,
+        vps_id: publishStrategy === 'dns' ? data.vpsId : undefined,
+        tunnel_id: publishStrategy === 'tunnel' ? data.tunnelId : undefined,
+        active: data.active,
+      };
+      return Api.createDomain(apiData);
+    },
+    onSuccess: (domain) => {
+      toast.success("Domínio criado com sucesso!");
+      navigate(`/domains/${domain.id}`);
     },
     onError: (error) => {
-      toast({
-        title: "Erro ao criar domínio",
-        description: error instanceof Error ? error.message : "Erro desconhecido",
-        variant: "destructive",
-      });
+      toast.error("Erro ao criar domínio: " + error.message);
     },
   });
 
   const onSubmit = (data: DomainFormData) => {
-    createMutation.mutate(data);
+    createDomainMutation.mutate(data);
   };
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center gap-4">
-        <Button 
-          variant="ghost" 
-          size="sm"
-          onClick={() => navigate("/domains")}
-        >
+        <Button variant="ghost" size="sm" onClick={() => navigate("/domains")}>
           <ArrowLeft className="h-4 w-4 mr-2" />
           Voltar
         </Button>
         <div>
-          <h1 className="text-3xl font-bold">Novo Domínio</h1>
+          <h2 className="text-3xl font-bold tracking-tight">Novo Domínio</h2>
           <p className="text-muted-foreground">
-            Adicione um novo domínio ao sistema
+            Configure um novo domínio para seu projeto
           </p>
         </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        {/* Form */}
-        <div className="lg:col-span-2">
-          <Card className="shadow-card">
+      <div className="grid gap-6 md:grid-cols-3">
+        {/* Main Form */}
+        <div className="md:col-span-2">
+          <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Globe className="h-5 w-5" />
-                Informações do Domínio
-              </CardTitle>
+              <CardTitle>Informações do Domínio</CardTitle>
             </CardHeader>
             <CardContent>
-              <Form {...form}>
-                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-                  <FormField
-                    control={form.control}
-                    name="hostname"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Hostname</FormLabel>
-                        <FormControl>
-                          <Input 
-                            placeholder="exemplo.com" 
-                            {...field}
-                          />
-                        </FormControl>
-                        <FormDescription>
-                          O hostname deve estar configurado nas rotas do túnel no destino desejado (Cloudflare Zero Trust)
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
+              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+                <div className="space-y-2">
+                  <Label htmlFor="hostname">Domínio</Label>
+                  <Input
+                    id="hostname"
+                    placeholder="exemplo.com"
+                    {...form.register("hostname")}
                   />
+                  {form.formState.errors.hostname && (
+                    <p className="text-sm text-destructive">
+                      {form.formState.errors.hostname.message}
+                    </p>
+                  )}
+                </div>
 
-                  <FormField
-                    control={form.control}
-                    name="currentVpsId"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>VPS Inicial (Opcional)</FormLabel>
-                        <Select 
-                          onValueChange={(value) => field.onChange(value === "none" ? undefined : value)} 
-                          defaultValue={field.value || "none"}
-                          disabled={vpsLoading}
-                        >
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Selecione uma VPS" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            <SelectItem value="none">Nenhuma VPS</SelectItem>
-                            {vpsList?.map((vps: any) => (
-                              <SelectItem key={vps.id} value={vps.id}>
-                                <div className="flex items-center gap-2">
-                                  <span>{vps.name}</span>
-                                  <HealthPill status={vps.status as any} size="sm" />
-                                </div>
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormDescription>
-                          Você pode configurar a VPS depois na página de detalhes
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                <div className="space-y-2">
+                  <Label htmlFor="type">Tipo</Label>
+                  <Select
+                    value={form.watch("type")}
+                    onValueChange={(value: any) => form.setValue("type", value)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione o tipo" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="apex">Apex (exemplo.com)</SelectItem>
+                      <SelectItem value="www">WWW (www.exemplo.com)</SelectItem>
+                      <SelectItem value="custom">Subdomínio personalizado</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
 
-                  <FormField
-                    control={form.control}
-                    name="active"
-                    render={({ field }) => (
-                      <FormItem className="flex flex-row items-start space-x-3 space-y-0">
-                        <FormControl>
-                          <Checkbox
-                            checked={field.value}
-                            onCheckedChange={field.onChange}
-                          />
-                        </FormControl>
-                        <div className="space-y-1 leading-none">
-                          <FormLabel>
-                            Ativar domínio
-                          </FormLabel>
-                          <FormDescription>
-                            Domínios ativos recebem tráfego de entrada
-                          </FormDescription>
+                <div className="space-y-4">
+                  <Label>Estratégia de Publicação</Label>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <Card 
+                      className={`cursor-pointer transition-colors ${
+                        publishStrategy === 'dns' ? 'ring-2 ring-primary' : ''
+                      }`}
+                      onClick={() => setPublishStrategy('dns')}
+                    >
+                      <CardContent className="p-4">
+                        <div className="flex items-center space-x-2">
+                          <div className={`w-3 h-3 rounded-full ${publishStrategy === 'dns' ? 'bg-primary' : 'bg-muted'}`} />
+                          <div>
+                            <h4 className="font-medium">DNS Direto</h4>
+                            <p className="text-sm text-muted-foreground">
+                              Aponta diretamente para o IP do servidor
+                            </p>
+                          </div>
                         </div>
-                      </FormItem>
-                    )}
-                  />
+                      </CardContent>
+                    </Card>
 
-                  <div className="flex gap-4">
-                    <Button 
-                      type="button" 
-                      variant="outline" 
-                      onClick={() => navigate("/domains")}
+                    <Card 
+                      className={`cursor-pointer transition-colors ${
+                        publishStrategy === 'tunnel' ? 'ring-2 ring-primary' : ''
+                      }`}
+                      onClick={() => setPublishStrategy('tunnel')}
                     >
-                      Cancelar
-                    </Button>
-                    <Button 
-                      type="submit" 
-                      disabled={createMutation.isPending}
-                    >
-                      {createMutation.isPending ? "Criando..." : "Criar Domínio"}
-                    </Button>
+                      <CardContent className="p-4">
+                        <div className="flex items-center space-x-2">
+                          <div className={`w-3 h-3 rounded-full ${publishStrategy === 'tunnel' ? 'bg-primary' : 'bg-muted'}`} />
+                          <div>
+                            <h4 className="font-medium">Cloudflare Tunnel</h4>
+                            <p className="text-sm text-muted-foreground">
+                              Usa túnel do Cloudflare
+                            </p>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
                   </div>
-                </form>
-              </Form>
+                </div>
+
+                {publishStrategy === 'dns' && (
+                  <div className="space-y-2">
+                    <Label htmlFor="vpsId">Servidor VPS</Label>
+                    <Select
+                      value={form.watch("vpsId") || ""}
+                      onValueChange={(value) => form.setValue("vpsId", value)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecione um servidor VPS" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {vpsData.map((vps) => (
+                          <SelectItem key={vps.id} value={vps.id}>
+                            <div className="flex items-center gap-2">
+                              <Server className="h-4 w-4" />
+                              {vps.name} ({vps.ipv4})
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {vpsData.length === 0 && (
+                      <p className="text-sm text-muted-foreground">
+                        Nenhuma VPS disponível. Crie uma VPS primeiro.
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {publishStrategy === 'tunnel' && (
+                  <div className="space-y-2">
+                    <Label htmlFor="tunnelId">Túnel Cloudflare</Label>
+                    <Input
+                      id="tunnelId"
+                      placeholder="ID do túnel Cloudflare"
+                      {...form.register("tunnelId")}
+                    />
+                  </div>
+                )}
+
+                <div className="flex items-center space-x-2">
+                  <Switch
+                    id="active"
+                    checked={form.watch("active")}
+                    onCheckedChange={(checked) => form.setValue("active", checked)}
+                  />
+                  <Label htmlFor="active">Domínio ativo</Label>
+                </div>
+
+                <div className="flex justify-between">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => navigate("/domains")}
+                  >
+                    <X className="h-4 w-4 mr-2" />
+                    Cancelar
+                  </Button>
+                  <Button
+                    type="submit"
+                    disabled={createDomainMutation.isPending}
+                  >
+                    {createDomainMutation.isPending ? "Criando..." : "Criar Domínio"}
+                  </Button>
+                </div>
+              </form>
             </CardContent>
           </Card>
         </div>
 
-        {/* Help */}
-        <div>
-          <Card className="shadow-card">
+        {/* Help Sidebar */}
+        <div className="space-y-4">
+          <Card>
             <CardHeader>
-              <CardTitle className="text-lg">Dicas</CardTitle>
+              <CardTitle className="flex items-center gap-2">
+                <Info className="h-4 w-4" />
+                Ajuda
+              </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4 text-sm">
+            <CardContent className="space-y-4">
               <div>
-                <h4 className="font-medium mb-2">Configuração do Hostname</h4>
-                <p className="text-muted-foreground">
-                  Certifique-se de que o hostname está configurado corretamente no Cloudflare Zero Trust como uma rota do túnel.
+                <h4 className="font-medium mb-2">DNS Direto</h4>
+                <p className="text-sm text-muted-foreground">
+                  Aponta o domínio diretamente para o IP do servidor VPS. 
+                  Mais simples mas requer configuração manual do DNS.
                 </p>
               </div>
               
               <div>
-                <h4 className="font-medium mb-2">VPS Inicial</h4>
-                <p className="text-muted-foreground">
-                  Você pode criar o domínio sem uma VPS e configurá-la depois usando a funcionalidade "Mover Domínio".
+                <h4 className="font-medium mb-2">Cloudflare Tunnel</h4>
+                <p className="text-sm text-muted-foreground">
+                  Usa túneis do Cloudflare para rotear tráfego. 
+                  Mais seguro e não expõe o IP do servidor.
                 </p>
               </div>
+            </CardContent>
+          </Card>
 
-              <div>
-                <h4 className="font-medium mb-2">Domínios Inativos</h4>
-                <p className="text-muted-foreground">
-                  Domínios inativos não recebem tráfego, mas permanecem no sistema para configuração futura.
-                </p>
+          <Card>
+            <CardHeader>
+              <CardTitle>Exemplo</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <Globe className="h-4 w-4 text-muted-foreground" />
+                  <code className="text-sm">exemplo.com</code>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Server className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm text-muted-foreground">
+                    {publishStrategy === 'dns' ? 'DNS → VPS' : 'DNS → Túnel → VPS'}
+                  </span>
+                </div>
               </div>
             </CardContent>
           </Card>

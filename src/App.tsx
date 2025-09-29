@@ -18,6 +18,8 @@ import DomainDetailPage from "@/pages/(protected)/domains/[id]/page";
 import VpsPage from "@/pages/(protected)/vps/page";
 import VpsNewPage from "@/pages/(protected)/vps/new/page";
 import VpsDetailPage from "@/pages/(protected)/vps/[id]/page";
+import TenantsPage from "@/pages/(protected)/tenants/page";
+import TenantDetailPage from "@/pages/(protected)/tenants/[id]/page";
 import SettingsPage from "@/pages/(protected)/settings/page";
 
 import NotFound from "@/pages/NotFound";
@@ -33,6 +35,8 @@ const App = () => (
             <Route path="/login" element={<LoginPage />} />
             <Route path="/" element={<ProtectedLayout />}>
               <Route index element={<Dashboard />} />
+              <Route path="tenants" element={<TenantsPage />} />
+              <Route path="tenants/:id" element={<TenantDetailPage />} />
               <Route path="domains" element={<DomainsPage />} />
               <Route path="domains/new" element={<DomainsNewPage />} />
               <Route path="domains/:id" element={<DomainDetailPage />} />

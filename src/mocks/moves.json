@@ -1,0 +1,20 @@
+[
+  {
+    "id": "m1a2b3c4-d5e6-7f8g-9h0i-j1k2l3m4n5o6",
+    "domainId": "d1a2b3c4-e5f6-7g8h-9i0j-k1l2m3n4o5p6",
+    "fromVpsId": "9bb3c2e7-4d8f-1a5b-7e9c-6f3a2d8b1e4c",
+    "toVpsId": "0f2c5a8d-7a3e-4b9c-8f2d-1e5a8c9f3a1b",
+    "reason": "VPS degraded, moving to healthy server",
+    "ok": true,
+    "createdAt": "2025-09-28T15:30:00Z"
+  },
+  {
+    "id": "m2b3c4d5-e6f7-8g9h-0i1j-k2l3m4n5o6p7",
+    "domainId": "d2b3c4e5-f6g7-8h9i-0j1k-l2m3n4o5p6q7",
+    "fromVpsId": null,
+    "toVpsId": "0f2c5a8d-7a3e-4b9c-8f2d-1e5a8c9f3a1b",
+    "reason": "Initial setup",
+    "ok": true,
+    "createdAt": "2025-09-28T18:45:00Z"
+  }
+]

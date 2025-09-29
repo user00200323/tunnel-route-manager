@@ -1,0 +1,26 @@
+[
+  {
+    "id": "0f2c5a8d-7a3e-4b9c-8f2d-1e5a8c9f3a1b",
+    "name": "SFO-A",
+    "tunnelId": "83134a8c-8fe7-4b06-8cd1-03c8d0469e1e",
+    "status": "healthy",
+    "lastSeenAt": "2025-09-28T17:46:43Z",
+    "notes": "Primary server in San Francisco"
+  },
+  {
+    "id": "9bb3c2e7-4d8f-1a5b-7e9c-6f3a2d8b1e4c",
+    "name": "AMS-B",
+    "tunnelId": "3f1b8e9c-2a5d-4f7b-9e1c-8d6a3f2b9c5e",
+    "status": "degraded",
+    "lastSeenAt": "2025-09-28T17:40:12Z",
+    "notes": "Amsterdam backup server"
+  },
+  {
+    "id": "7c1f8b3e-9a2d-5e7c-4f1b-2e8a9c5d3f7a",
+    "name": "LON-C",
+    "tunnelId": "5e7c9f1b-8a3d-2e5f-7c1b-4e9a8c2d5f3b",
+    "status": "down",
+    "lastSeenAt": "2025-09-28T16:30:45Z",
+    "notes": "London server - maintenance"
+  }
+]

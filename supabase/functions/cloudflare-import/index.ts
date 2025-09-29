@@ -24,6 +24,17 @@ interface CloudflareZone {
   modified_on: string
 }
 
+interface CloudflareTunnel {
+  id: string
+  name: string
+  created_at: string
+  conns: Array<{
+    colo_name: string
+    uuid: string
+    is_pending_reconnect: boolean
+  }>
+}
+
 async function getCloudflareZones(): Promise<CloudflareZone[]> {
   console.log('Fetching zones from Cloudflare...')
   
@@ -63,7 +74,84 @@ async function getCloudflareZones(): Promise<CloudflareZone[]> {
   return data.result || []
 }
 
-async function importZonesToDatabase(zones: CloudflareZone[]) {
+async function getCloudflareTunnels(): Promise<CloudflareTunnel[]> {
+  console.log('Fetching tunnels from Cloudflare...')
+  
+  // First get account ID
+  const accountResponse = await fetch('https://api.cloudflare.com/client/v4/accounts', {
+    headers: {
+      'Authorization': `Bearer ${cloudflareToken}`,
+      'Content-Type': 'application/json',
+    },
+  })
+
+  if (!accountResponse.ok) {
+    console.error('Failed to get account info')
+    return []
+  }
+
+  const accountData = await accountResponse.json()
+  if (!accountData.success || !accountData.result?.length) {
+    console.error('No accounts found')
+    return []
+  }
+
+  const accountId = accountData.result[0].id
+  
+  const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/cfd_tunnel`, {
+    headers: {
+      'Authorization': `Bearer ${cloudflareToken}`,
+      'Content-Type': 'application/json',
+    },
+  })
+
+  if (!response.ok) {
+    console.error('Failed to fetch tunnels:', response.status)
+    return []
+  }
+
+  const data = await response.json()
+  
+  if (!data.success) {
+    console.error('Cloudflare tunnels API returned errors:', data.errors)
+    return []
+  }
+  
+  console.log(`Found ${data.result?.length || 0} tunnels`)
+  return data.result || []
+}
+
+async function importTunnelsToDatabase(tunnels: CloudflareTunnel[]) {
+  console.log('Starting tunnel import to database...')
+  
+  const tunnelsToUpsert = tunnels.map(tunnel => ({
+    tunnel_id: tunnel.id,
+    name: tunnel.name,
+    provider: 'cloudflared',
+    status: tunnel.conns && tunnel.conns.length > 0 ? 'connected' : 'disconnected',
+    last_seen_at: new Date().toISOString(),
+    created_at: tunnel.created_at,
+    updated_at: new Date().toISOString()
+  }))
+
+  const { data: upsertedTunnels, error: tunnelsError } = await supabase
+    .from('tunnels')
+    .upsert(tunnelsToUpsert, { 
+      onConflict: 'tunnel_id',
+      ignoreDuplicates: false 
+    })
+    .select()
+
+  if (tunnelsError) {
+    console.error('Error upserting tunnels:', tunnelsError)
+    throw tunnelsError
+  }
+
+  console.log(`Successfully processed ${upsertedTunnels?.length || 0} tunnels`)
+  return upsertedTunnels || []
+}
+
+async function importZonesToDatabase(zones: CloudflareZone[], tunnels: CloudflareTunnel[]) {
   console.log('Starting import to database...')
   
   // Create a default tenant if none exists
@@ -114,9 +202,15 @@ async function importZonesToDatabase(zones: CloudflareZone[]) {
   // Get existing domains to track what's new vs updated
   const { data: existingDomains } = await supabase
     .from('domains')
-    .select('hostname')
+    .select('hostname, tunnel_id')
 
   const existingHostnames = new Set(existingDomains?.map(d => d.hostname) || [])
+
+  // Create a map of tunnel names to tunnel IDs for association
+  const tunnelMap = new Map()
+  tunnels.forEach(tunnel => {
+    tunnelMap.set(tunnel.name, tunnel.id)
+  })
 
   // Import domains - Map Cloudflare status to our domain_status enum
   const domainsToUpsert = zones.map(zone => {
@@ -131,11 +225,23 @@ async function importZonesToDatabase(zones: CloudflareZone[]) {
       domainStatus = 'error'
     }
 
+    // Try to find matching tunnel by domain name or similar naming pattern
+    let tunnelId = null
+    for (const [tunnelName, cfTunnelId] of tunnelMap) {
+      if (tunnelName.includes(zone.name.replace('.', '-')) || 
+          tunnelName.includes(zone.name.split('.')[0]) ||
+          zone.name.includes(tunnelName)) {
+        tunnelId = cfTunnelId
+        break
+      }
+    }
+
     return {
       hostname: zone.name,
       fqdn: zone.name,
       tenant_id: tenant.id,
       vps_id: vps.id,
+      tunnel_id: tunnelId,
       status: domainStatus,
       active: zone.status === 'active',
       created_at: zone.created_on,
@@ -163,16 +269,19 @@ async function importZonesToDatabase(zones: CloudflareZone[]) {
   // Count new vs updated domains
   const newDomainsCount = domainsToUpsert.filter(d => !existingHostnames.has(d.hostname)).length
   const updatedDomainsCount = domainsToUpsert.filter(d => existingHostnames.has(d.hostname)).length
+  const domainsWithTunnels = domainsToUpsert.filter(d => d.tunnel_id).length
 
   console.log(`Successfully processed ${upsertedDomains?.length || 0} domains`)
   console.log(`- New domains: ${newDomainsCount}`)
   console.log(`- Updated domains: ${updatedDomainsCount}`)
+  console.log(`- Domains with tunnels: ${domainsWithTunnels}`)
   
   return {
     domains: upsertedDomains || [],
     newCount: newDomainsCount,
     updatedCount: updatedDomainsCount,
-    totalCount: upsertedDomains?.length || 0
+    totalCount: upsertedDomains?.length || 0,
+    tunnelCount: domainsWithTunnels
   }
 }
 
@@ -185,21 +294,30 @@ serve(async (req) => {
   try {
     console.log('Starting Cloudflare import process...')
     
-    // Fetch zones from Cloudflare
-    const zones = await getCloudflareZones()
+    // Fetch zones and tunnels from Cloudflare
+    const [zones, tunnels] = await Promise.all([
+      getCloudflareZones(),
+      getCloudflareTunnels()
+    ])
     
-    // Import to database
-    const importedDomains = await importZonesToDatabase(zones)
+    // Import tunnels first
+    await importTunnelsToDatabase(tunnels)
+    
+    // Import zones with tunnel associations
+    const importedDomains = await importZonesToDatabase(zones, tunnels)
     
     return new Response(
       JSON.stringify({
         success: true,
-        message: `Successfully imported ${importedDomains.totalCount} domains from Cloudflare (${importedDomains.newCount} new, ${importedDomains.updatedCount} updated)`,
+        message: `Successfully imported ${importedDomains.totalCount} domains and ${tunnels.length} tunnels from Cloudflare (${importedDomains.newCount} new domains, ${importedDomains.updatedCount} updated, ${importedDomains.tunnelCount} with tunnels)`,
         domains: importedDomains.domains,
+        tunnels: tunnels,
         statistics: {
           total: importedDomains.totalCount,
           new: importedDomains.newCount,
-          updated: importedDomains.updatedCount
+          updated: importedDomains.updatedCount,
+          tunnels: tunnels.length,
+          domainsWithTunnels: importedDomains.tunnelCount
         }
       }),
       {

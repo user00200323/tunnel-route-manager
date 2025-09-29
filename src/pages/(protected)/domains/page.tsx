@@ -22,6 +22,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Plus, Search, Globe, ArrowUpDown, Download, ArrowRightLeft } from "lucide-react";
 import { HealthPill } from "@/components/HealthPill";
 import { SwitchVpsDialog } from "@/components/SwitchVpsDialog";
@@ -36,6 +37,7 @@ export default function DomainsPage() {
     query: "",
     vpsId: "",
     active: undefined as boolean | undefined,
+    onlyTunnels: false,
   });
   const [switchDialog, setSwitchDialog] = useState<{
     open: boolean;
@@ -78,6 +80,9 @@ export default function DomainsPage() {
       return false;
     }
     if (filters.active !== undefined && domain.active !== filters.active) {
+      return false;
+    }
+    if (filters.onlyTunnels && !domain.tunnel_id) {
       return false;
     }
     return true;
@@ -202,6 +207,24 @@ export default function DomainsPage() {
               </Select>
             </div>
           </div>
+          
+          <div className="mt-4 pt-4 border-t">
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="onlyTunnels"
+                checked={filters.onlyTunnels}
+                onCheckedChange={(checked) => 
+                  setFilters({ ...filters, onlyTunnels: !!checked })
+                }
+              />
+              <label 
+                htmlFor="onlyTunnels" 
+                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+              >
+                Mostrar apenas domínios com tunnels
+              </label>
+            </div>
+          </div>
         </CardContent>
       </Card>
 
@@ -236,6 +259,7 @@ export default function DomainsPage() {
                     </Button>
                   </TableHead>
                   <TableHead>VPS Atual</TableHead>
+                  <TableHead>Tunnel</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Criado em</TableHead>
                   <TableHead className="text-right">Ações</TableHead>
@@ -262,6 +286,15 @@ export default function DomainsPage() {
                           </div>
                         ) : (
                           <Badge variant="outline">Sem VPS</Badge>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {domain.tunnel_id ? (
+                          <Badge variant="secondary">
+                            Tunnel Ativo
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline">Sem Tunnel</Badge>
                         )}
                       </TableCell>
                       <TableCell>

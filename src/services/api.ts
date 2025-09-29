@@ -261,6 +261,22 @@ export const Api = {
     }
   },
 
+  async updateVps(id: string, data: Partial<VPS>): Promise<VPS> {
+    try {
+      const { data: updatedVps, error } = await supabase
+        .from('vps_servers')
+        .update(data)
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (error) handleError(error);
+      return updatedVps as VPS;
+    } catch (error) {
+      handleError(error);
+    }
+  },
+
   async assignRoute(domainId: string, vpsId: string): Promise<void> {
     try {
       const { error } = await supabase

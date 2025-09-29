@@ -1,3 +1,4 @@
+import React from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
@@ -68,7 +69,7 @@ export default function VpsEditPage() {
       tunnel_id: data.tunnelId,
       notes: data.notes,
     }),
-    onSuccess: (data) => {
+    onSuccess: (data: any) => {
       toast.success(`VPS ${data.name} atualizada com sucesso!`);
       queryClient.invalidateQueries({ queryKey: ["vps"] });
       queryClient.invalidateQueries({ queryKey: ["vps", id] });

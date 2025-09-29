@@ -125,10 +125,12 @@ export default function DomainsPage() {
     const hasCloudflareSetup = domain.publish_strategy === 'tunnel' || domain.tunnel_id;
     
     if (!domain.active) return "error";
-    if (!hasCloudflareSetup) return "pending";
+    if (!hasCloudflareSetup && domain.status === 'error') return "error";
+    if (domain.status === 'error') return "error";
     if (vps && vps.health === 'down') return "error";
     if (vps && vps.health === 'degraded') return "propagating";
-    return "live";
+    if (domain.status === 'live') return "live";
+    return "pending";
   };
 
   const getTunnelStatus = (domain: Domain) => {
@@ -136,6 +138,20 @@ export default function DomainsPage() {
     const vps = getVpsForDomain(domain.vps_id || null);
     if (vps && vps.health === 'down') return "error";
     return "connected";
+  };
+
+  const getCloudflareStatus = (domain: Domain) => {
+    if (domain.publish_strategy === 'tunnel' && domain.tunnel_id) {
+      return { status: 'tunnel', label: 'Tunnel Ativo', connected: true };
+    }
+    if (domain.publish_strategy === 'dns') {
+      return { 
+        status: 'dns', 
+        label: domain.status === 'live' ? 'DNS Configurado' : 'DNS Pendente', 
+        connected: domain.status === 'live' 
+      };
+    }
+    return { status: 'none', label: 'Não Configurado', connected: false };
   };
 
   if (isLoading) {
@@ -187,6 +203,65 @@ export default function DomainsPage() {
             Novo Domínio
           </Button>
         </div>
+      </div>
+
+      {/* Summary Cards */}
+      <div className="grid gap-4 md:grid-cols-4 mb-6">
+        <Card>
+          <CardContent className="flex items-center gap-3 p-4">
+            <div className="p-2 bg-emerald-100 rounded-lg dark:bg-emerald-900/20">
+              <Radio className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Domínios Ativos</p>
+              <p className="text-2xl font-bold text-emerald-600">
+                {filteredDomains.filter(d => getDomainStatus(d) === 'live').length}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardContent className="flex items-center gap-3 p-4">
+            <div className="p-2 bg-amber-100 rounded-lg dark:bg-amber-900/20">
+              <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Com Problemas</p>
+              <p className="text-2xl font-bold text-amber-600">
+                {filteredDomains.filter(d => getDomainStatus(d) === 'error').length}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardContent className="flex items-center gap-3 p-4">
+            <div className="p-2 bg-blue-100 rounded-lg dark:bg-blue-900/20">
+              <CheckCircle className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Via Cloudflare</p>
+              <p className="text-2xl font-bold text-blue-600">
+                {filteredDomains.filter(d => getCloudflareStatus(d).connected).length}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardContent className="flex items-center gap-3 p-4">
+            <div className="p-2 bg-gray-100 rounded-lg dark:bg-gray-800">
+              <Globe className="h-5 w-5 text-gray-600 dark:text-gray-400" />
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Total</p>
+              <p className="text-2xl font-bold">
+                {filteredDomains.length}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Filters */}
@@ -349,22 +424,36 @@ export default function DomainsPage() {
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-col gap-1">
-                          <TunnelStatusBadge status={tunnelStatus as any} size="sm" />
-                          {domain.publish_strategy === 'tunnel' && domain.tunnel_id && (
-                            <span className="text-xs text-muted-foreground">
-                              Via Tunnel
+                          <div className="flex items-center gap-2">
+                            {getCloudflareStatus(domain).connected ? (
+                              <CheckCircle className="h-3 w-3 text-emerald-500" />
+                            ) : (
+                              <XCircle className="h-3 w-3 text-red-500" />
+                            )}
+                            <span className="text-sm font-medium">
+                              {getCloudflareStatus(domain).label}
                             </span>
+                          </div>
+                          {domain.publish_strategy === 'tunnel' && (
+                            <Badge variant="secondary" className="w-fit text-xs">
+                              Tunnel: {domain.tunnel_id ? 'Ativo' : 'N/A'}
+                            </Badge>
                           )}
                           {domain.publish_strategy === 'dns' && (
-                            <span className="text-xs text-muted-foreground">
-                              Via DNS
-                            </span>
+                            <Badge variant="outline" className="w-fit text-xs">
+                              DNS Direto
+                            </Badge>
                           )}
                         </div>
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-col gap-1">
-                          <DomainStatusBadge status={domainStatus as any} size="sm" />
+                          <div className="flex items-center gap-2">
+                            <DomainStatusBadge status={domainStatus as any} size="sm" />
+                            {domainStatus === 'live' && (
+                              <span className="text-xs text-emerald-600 font-medium">●</span>
+                            )}
+                          </div>
                           {healthCheck?.latency && (
                             <span className="text-xs text-muted-foreground">
                               {healthCheck.latency}ms
@@ -374,15 +463,25 @@ export default function DomainsPage() {
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-col gap-1">
-                          <span className="text-sm">
-                            {healthCheck?.lastCheck 
-                              ? new Date(healthCheck.lastCheck).toLocaleTimeString("pt-BR", {
-                                  hour: '2-digit',
-                                  minute: '2-digit'
-                                })
-                              : 'Nunca'
-                            }
-                          </span>
+                          <div className="flex items-center gap-1">
+                            <span className="text-sm">
+                              {healthCheck?.lastCheck 
+                                ? new Date(healthCheck.lastCheck).toLocaleTimeString("pt-BR", {
+                                    hour: '2-digit',
+                                    minute: '2-digit'
+                                  })
+                                : domain.last_check_at
+                                ? new Date(domain.last_check_at).toLocaleTimeString("pt-BR", {
+                                    hour: '2-digit',
+                                    minute: '2-digit'
+                                  })
+                                : 'Nunca'
+                              }
+                            </span>
+                            {(healthCheck?.lastCheck || domain.last_check_at) && (
+                              <span className="text-xs text-emerald-500">●</span>
+                            )}
+                          </div>
                           <span className="text-xs text-muted-foreground">
                             {new Date(domain.created_at).toLocaleDateString("pt-BR")}
                           </span>

@@ -337,6 +337,78 @@ serve(async (req) => {
         };
         break;
 
+      case 'add_domain':
+        if (!tunnelId || !domains || domains.length === 0) {
+          throw new Error('Tunnel ID and domains are required');
+        }
+
+        // Get current tunnel configuration
+        const { data: currentTunnel, error: getCurrentError } = await supabase
+          .from('tunnels')
+          .select('*')
+          .eq('tunnel_id', tunnelId)
+          .single();
+
+        if (getCurrentError || !currentTunnel) {
+          throw new Error(`Tunnel not found: ${getCurrentError?.message}`);
+        }
+
+        // Update tunnel configuration with new domains
+        const addConfig = generateTunnelConfig(tunnelId, domains);
+        await updateTunnelConfig(tunnelId, accountId, addConfig);
+
+        // Update tunnel status
+        await supabase
+          .from('tunnels')
+          .update({ 
+            status: 'connected',
+            updated_at: new Date().toISOString()
+          })
+          .eq('tunnel_id', tunnelId);
+
+        result = {
+          message: 'Domain added to tunnel configuration',
+          config: addConfig,
+          domains
+        };
+        break;
+
+      case 'remove_domain':
+        if (!tunnelId) {
+          throw new Error('Tunnel ID is required');
+        }
+
+        // Get all remaining domains for this tunnel (excluding the one being removed)
+        const { data: remainingDomains, error: getRemainingError } = await supabase
+          .from('domains')
+          .select('hostname')
+          .eq('tunnel_id', tunnelId)
+          .eq('publish_strategy', 'tunnel');
+
+        if (getRemainingError) {
+          throw new Error(`Failed to get remaining domains: ${getRemainingError.message}`);
+        }
+
+        const remainingHostnames = remainingDomains.map(d => d.hostname);
+        const removeConfig = generateTunnelConfig(tunnelId, remainingHostnames);
+        await updateTunnelConfig(tunnelId, accountId, removeConfig);
+
+        // Update tunnel status
+        await supabase
+          .from('tunnels')
+          .update({ 
+            status: 'connected',
+            updated_at: new Date().toISOString()
+          })
+          .eq('tunnel_id', tunnelId);
+
+        result = {
+          message: 'Domain removed from tunnel configuration',
+          config: removeConfig,
+          domains: remainingHostnames
+        };
+        break;
+
       default:
         throw new Error(`Unknown action: ${action}`);
     }

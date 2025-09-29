@@ -496,6 +496,19 @@ export const Api = {
     }
   },
 
+  // === DOMAIN TUNNEL CONFIGURATION ===
+  async configureDomainWithTunnel(domainId: string, tunnelId: string, serviceUrl: string = 'http://caddy:80'): Promise<any> {
+    try {
+      const { data, error } = await supabase.functions.invoke('configure-domain-tunnel', {
+        body: { domainId, tunnelId, serviceUrl }
+      });
+      if (error) throw error;
+      return data;
+    } catch (error) {
+      handleError(error);
+    }
+  },
+
   // === CLOUDFLARE IMPORT ===
   async importCloudflareDomainsSync(): Promise<any> {
     try {

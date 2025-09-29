@@ -206,11 +206,18 @@ async function importZonesToDatabase(zones: CloudflareZone[], tunnels: Cloudflar
 
   const existingHostnames = new Set(existingDomains?.map(d => d.hostname) || [])
 
-  // Create a map of tunnel names to tunnel IDs for association
-  const tunnelMap = new Map()
-  tunnels.forEach(tunnel => {
-    tunnelMap.set(tunnel.name, tunnel.id)
+  // Query database tunnels to get UUIDs for foreign key references
+  const { data: dbTunnels } = await supabase
+    .from('tunnels')
+    .select('id, name, tunnel_id')
+  
+  // Create a map of tunnel names to their database UUIDs (not Cloudflare IDs)
+  const tunnelMap = new Map<string, string>()
+  dbTunnels?.forEach(tunnel => {
+    tunnelMap.set(tunnel.name, tunnel.id) // Use database UUID, not Cloudflare tunnel_id
   })
+  
+  console.log(`Created tunnel mapping for ${tunnelMap.size} tunnels`)
 
   // Import domains - Map Cloudflare status to our domain_status enum
   const domainsToUpsert = zones.map(zone => {

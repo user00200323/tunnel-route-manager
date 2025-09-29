@@ -38,7 +38,6 @@ export default function DomainsNewPage() {
     defaultValues: {
       hostname: "",
       type: "apex",
-      publish_strategy: "dns",
       active: true,
     },
   });
@@ -54,6 +53,9 @@ export default function DomainsNewPage() {
         vps_id: publishStrategy === 'dns' ? data.vpsId : undefined,
         tunnel_id: publishStrategy === 'tunnel' ? data.tunnelId : undefined,
         active: data.active,
+        status: 'pending' as const,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       };
       return Api.createDomain(apiData);
     },
@@ -204,7 +206,8 @@ export default function DomainsNewPage() {
                     <Input
                       id="tunnelId"
                       placeholder="ID do túnel Cloudflare"
-                      {...form.register("tunnelId")}
+                      value={form.watch("tunnelId") || ""}
+                      onChange={(e) => form.setValue("tunnelId", e.target.value)}
                     />
                   </div>
                 )}

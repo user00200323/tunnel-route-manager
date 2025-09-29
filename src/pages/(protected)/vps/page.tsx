@@ -9,38 +9,36 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Plus, Search, Server, Activity, RefreshCw } from "lucide-react";
 import { HealthPill } from "@/components/HealthPill";
 import { Copyable } from "@/components/Copyable";
-import type { VPS, Domain } from "@/models";
-
-const fetchVpsData = async (query: string) => {
-  const vpsList = await import("@/mocks/vps.json");
-  const domains = await import("@/mocks/domains.json");
-  
-  let filtered = vpsList.default;
-  
-  if (query) {
-    filtered = filtered.filter(vps => 
-      vps.name.toLowerCase().includes(query.toLowerCase()) ||
-      vps.tunnelId.toLowerCase().includes(query.toLowerCase())
-    );
-  }
-  
-  // Count domains per VPS
-  const vpsWithDomains = filtered.map(vps => ({
-    ...vps,
-    domainCount: domains.default.filter(d => d.currentVpsId === vps.id).length
-  }));
-  
-  return vpsWithDomains;
-};
+import type { VPS, Domain } from "@/types";
+import { Api } from "@/services/api";
 
 export default function VpsPage() {
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
   
-  const { data: vpsList, isLoading, refetch } = useQuery({
-    queryKey: ["vps", query],
-    queryFn: () => fetchVpsData(query),
+  const { data: allVps = [], isLoading: vpsLoading, refetch } = useQuery({
+    queryKey: ["vps"],
+    queryFn: () => Api.listVps(),
   });
+
+  const { data: domains = [], isLoading: domainsLoading } = useQuery({
+    queryKey: ["domains"],
+    queryFn: () => Api.listDomains(),
+  });
+
+  const isLoading = vpsLoading || domainsLoading;
+
+  // Filter VPS based on query and add domain count
+  const vpsList = allVps
+    .filter(vps => {
+      if (!query) return true;
+      return vps.name.toLowerCase().includes(query.toLowerCase()) ||
+             (vps.tunnel_id && vps.tunnel_id.toLowerCase().includes(query.toLowerCase()));
+    })
+    .map(vps => ({
+      ...vps,
+      domainCount: domains.filter(d => d.vps_id === vps.id).length
+    }));
 
   const handleRefreshAll = () => {
     refetch();
@@ -65,9 +63,9 @@ export default function VpsPage() {
     );
   }
 
-  const healthyCount = vpsList?.filter(v => v.status === "healthy").length || 0;
-  const degradedCount = vpsList?.filter(v => v.status === "degraded").length || 0;
-  const downCount = vpsList?.filter(v => v.status === "down").length || 0;
+  const healthyCount = vpsList?.filter(v => v.health === "healthy").length || 0;
+  const degradedCount = vpsList?.filter(v => v.health === "degraded").length || 0;
+  const downCount = vpsList?.filter(v => v.health === "down").length || 0;
 
   return (
     <div className="space-y-6">
@@ -175,12 +173,12 @@ export default function VpsPage() {
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-lg">{vps.name}</CardTitle>
-                  <HealthPill status={vps.status as any} size="sm" />
+                  <HealthPill status={vps.health as any} size="sm" />
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
                 <Copyable 
-                  text={vps.tunnelId} 
+                  text={vps.tunnel_id || 'N/A'} 
                   label="Tunnel ID"
                 />
                 
@@ -191,10 +189,10 @@ export default function VpsPage() {
                   </Badge>
                 </div>
                 
-                {vps.lastSeenAt && (
+                {vps.last_seen_at && (
                   <div className="text-xs text-muted-foreground">
                     Último heartbeat: {" "}
-                    {new Date(vps.lastSeenAt).toLocaleString("pt-BR")}
+                    {new Date(vps.last_seen_at).toLocaleString("pt-BR")}
                   </div>
                 )}
                 

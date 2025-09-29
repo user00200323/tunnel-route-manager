@@ -8,8 +8,10 @@ export const vpsSchema = z.object({
 
 export const domainSchema = z.object({
   hostname: z.string().regex(/^[a-z0-9.-]+\.[a-z.]+$/, "Hostname inválido"),
+  type: z.enum(["apex", "www", "custom"]).default("apex"),
+  vpsId: z.string().uuid().optional(),
+  tunnelId: z.string().optional(),
   active: z.boolean().default(true),
-  currentVpsId: z.string().uuid().optional()
 });
 
 export const moveSchema = z.object({

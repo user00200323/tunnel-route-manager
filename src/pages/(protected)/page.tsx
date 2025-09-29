@@ -6,38 +6,33 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Plus, Globe, Server, Activity, TrendingUp } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { HealthPill } from "@/components/HealthPill";
-import type { Domain, VPS, DomainMove } from "@/models";
-
-// Mock data fetchers
-const fetchDashboardStats = async () => {
-  // Mock data fetching
-  const domains = await import("@/mocks/domains.json");
-  const vpsList = await import("@/mocks/vps.json");
-  const moves = await import("@/mocks/moves.json");
-
-  return {
-    domains: domains.default,
-    vpsList: vpsList.default,
-    moves: moves.default.slice(0, 5), // últimos 5
-    stats: {
-      activeDomains: domains.default.filter(d => d.active).length,
-      totalDomains: domains.default.length,
-      healthyVps: vpsList.default.filter(v => v.status === "healthy").length,
-      degradedVps: vpsList.default.filter(v => v.status === "degraded").length,
-      downVps: vpsList.default.filter(v => v.status === "down").length,
-      totalVps: vpsList.default.length,
-      recentMoves: moves.default.length,
-    },
-  };
-};
+import type { Domain, VPS } from "@/types";
+import { Api } from "@/services/api";
 
 export default function Dashboard() {
   const navigate = useNavigate();
   
-  const { data, isLoading } = useQuery({
-    queryKey: ["dashboard"],
-    queryFn: fetchDashboardStats,
+  const { data: domains = [], isLoading: domainsLoading } = useQuery({
+    queryKey: ["domains"],
+    queryFn: () => Api.listDomains(),
   });
+
+  const { data: vpsList = [], isLoading: vpsLoading } = useQuery({
+    queryKey: ["vps"],
+    queryFn: () => Api.listVps(),
+  });
+
+  const isLoading = domainsLoading || vpsLoading;
+
+  const stats = {
+    activeDomains: domains.filter(d => d.active).length,
+    totalDomains: domains.length,
+    healthyVps: vpsList.filter(v => v.health === "healthy").length,
+    degradedVps: vpsList.filter(v => v.health === "degraded").length,
+    downVps: vpsList.filter(v => v.health === "down").length,
+    totalVps: vpsList.length,
+    recentMoves: 0, // TODO: implement moves
+  };
 
   if (isLoading) {
     return (
@@ -58,7 +53,7 @@ export default function Dashboard() {
     );
   }
 
-  const { stats, vpsList, moves } = data!;
+  
 
   return (
     <div className="space-y-8">
@@ -165,10 +160,10 @@ export default function Dashboard() {
                 <div>
                   <p className="font-medium">{vps.name}</p>
                   <p className="text-sm text-muted-foreground">
-                    {vps.tunnelId}
+                    {vps.tunnel_id}
                   </p>
                 </div>
-                <HealthPill status={vps.status as any} size="sm" />
+                <HealthPill status={vps.health as any} size="sm" />
               </div>
             ))}
             {vpsList.length === 0 && (
@@ -179,37 +174,15 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        {/* Recent Moves */}
+        {/* Recent Activity */}
         <Card className="shadow-card">
           <CardHeader>
-            <CardTitle>Últimos Movimentos</CardTitle>
+            <CardTitle>Atividade Recente</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            {moves.map((move) => (
-              <div key={move.id} className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <p className="font-medium text-sm">
-                    Domínio movido
-                  </p>
-                  <Badge variant={move.ok ? "success" : "destructive"} className="text-xs">
-                    {move.ok ? "Sucesso" : "Falha"}
-                  </Badge>
-                </div>
-                {move.reason && (
-                  <p className="text-xs text-muted-foreground">
-                    {move.reason}
-                  </p>
-                )}
-                <p className="text-xs text-muted-foreground">
-                  {new Date(move.createdAt).toLocaleString("pt-BR")}
-                </p>
-              </div>
-            ))}
-            {moves.length === 0 && (
-              <p className="text-sm text-muted-foreground text-center py-4">
-                Nenhum movimento recente
-              </p>
-            )}
+            <p className="text-sm text-muted-foreground text-center py-4">
+              Nenhuma atividade recente
+            </p>
           </CardContent>
         </Card>
       </div>

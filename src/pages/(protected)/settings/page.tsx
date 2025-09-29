@@ -15,7 +15,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
-import { getCurrentUser } from "@/lib/auth-mock";
+import { useAuth } from "@/hooks/useAuth";
 import { Settings, Key, Eye, EyeOff, TestTube, Shield } from "lucide-react";
 
 type SettingsFormData = {
@@ -28,7 +28,7 @@ export default function SettingsPage() {
   const { toast } = useToast();
   const [showToken, setShowToken] = useState(false);
   const [testing, setTesting] = useState(false);
-  const user = getCurrentUser();
+  const { user } = useAuth();
   
   const form = useForm<SettingsFormData>({
     defaultValues: {

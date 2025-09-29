@@ -254,7 +254,7 @@ export default function DomainDetailPage() {
                     {connectedVps.ipv4 && (
                       <div>
                         <label className="text-sm font-medium">IP Address</label>
-                        <Copyable value={connectedVps.ipv4} />
+                        <Copyable text={connectedVps.ipv4} />
                       </div>
                     )}
                   </div>
@@ -280,7 +280,7 @@ export default function DomainDetailPage() {
                     <label className="text-sm font-medium">Registro A</label>
                     <div className="text-sm text-muted-foreground">
                       {connectedVps?.ipv4 ? (
-                        <Copyable value={`${domain.hostname} A ${connectedVps.ipv4}`} />
+                        <Copyable text={`${domain.hostname} A ${connectedVps.ipv4}`} />
                       ) : (
                         'Nenhum IP configurado'
                       )}
@@ -290,7 +290,7 @@ export default function DomainDetailPage() {
                   <div>
                     <label className="text-sm font-medium">Registro CNAME (www)</label>
                     <div className="text-sm text-muted-foreground">
-                      <Copyable value={`www.${domain.hostname} CNAME ${domain.hostname}`} />
+                      <Copyable text={`www.${domain.hostname} CNAME ${domain.hostname}`} />
                     </div>
                   </div>
 
@@ -352,8 +352,7 @@ export default function DomainDetailPage() {
         description={`Tem certeza que deseja remover o domínio "${domain.hostname}"? Esta ação não pode ser desfeita.`}
         onConfirm={() => deleteDomainMutation.mutate()}
         confirmText="Remover"
-        confirmVariant="destructive"
-        isLoading={deleteDomainMutation.isPending}
+        variant="destructive"
       />
     </div>
   );

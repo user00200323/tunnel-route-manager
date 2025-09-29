@@ -23,14 +23,14 @@ const columns: ColumnDef<Tenant>[] = [
           </div>
           <div>
             <div className="font-medium">{tenant.name}</div>
-            <div className="text-sm text-muted-foreground">/{tenant.slug}</div>
+            <div className="text-sm text-muted-foreground">ID: {tenant.id}</div>
           </div>
         </div>
       );
     },
   },
   {
-    accessorKey: "createdAt",
+    accessorKey: "created_at",
     header: "Criado em",
     cell: ({ getValue }) => {
       const date = new Date(getValue() as string);
@@ -71,12 +71,10 @@ const columns: ColumnDef<Tenant>[] = [
 ];
 
 export default function TenantsPage() {
-  const { data: tenantsResponse, isLoading } = useQuery({
+  const { data: tenants = [], isLoading } = useQuery({
     queryKey: ['tenants'],
     queryFn: () => Api.listTenants(),
   });
-
-  const tenants = tenantsResponse?.data || [];
 
   return (
     <div className="space-y-6">

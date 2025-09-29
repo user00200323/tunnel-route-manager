@@ -175,7 +175,7 @@ export default function VpsDetailPage() {
                   </div>
                   <div>
                     <label className="text-sm font-medium">ID</label>
-                    <Copyable value={vps.id} />
+                    <Copyable text={vps.id} />
                   </div>
                   <div>
                     <label className="text-sm font-medium">Provedor</label>
@@ -188,19 +188,19 @@ export default function VpsDetailPage() {
                   {vps.ipv4 && (
                     <div>
                       <label className="text-sm font-medium">IPv4</label>
-                      <Copyable value={vps.ipv4} />
+                      <Copyable text={vps.ipv4} />
                     </div>
                   )}
                   {vps.ipv6 && (
                     <div>
                       <label className="text-sm font-medium">IPv6</label>
-                      <Copyable value={vps.ipv6} />
+                      <Copyable text={vps.ipv6} />
                     </div>
                   )}
                   {vps.tunnel_id && (
                     <div>
                       <label className="text-sm font-medium">Tunnel ID</label>
-                      <Copyable value={vps.tunnel_id} />
+                      <Copyable text={vps.tunnel_id} />
                     </div>
                   )}
                   <div>

@@ -23,35 +23,8 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Plus, Search, Globe, ArrowUpDown } from "lucide-react";
 import { HealthPill } from "@/components/HealthPill";
-import type { Domain, VPS } from "@/models";
-
-const fetchDomains = async (filters: any) => {
-  // Mock implementation
-  const domains = await import("@/mocks/domains.json");
-  const vpsList = await import("@/mocks/vps.json");
-  
-  let filtered = domains.default;
-  
-  if (filters.query) {
-    filtered = filtered.filter(d => 
-      d.hostname.toLowerCase().includes(filters.query.toLowerCase())
-    );
-  }
-  
-  if (filters.vpsId) {
-    filtered = filtered.filter(d => d.currentVpsId === filters.vpsId);
-  }
-  
-  if (filters.active !== undefined) {
-    filtered = filtered.filter(d => d.active === filters.active);
-  }
-  
-  return {
-    items: filtered,
-    total: filtered.length,
-    vpsList: vpsList.default,
-  };
-};
+import type { Domain, VPS } from "@/types";
+import { Api } from "@/services/api";
 
 export default function DomainsPage() {
   const navigate = useNavigate();
@@ -61,14 +34,35 @@ export default function DomainsPage() {
     active: undefined as boolean | undefined,
   });
   
-  const { data, isLoading } = useQuery({
-    queryKey: ["domains", filters],
-    queryFn: () => fetchDomains(filters),
+  const { data: domains = [], isLoading: domainsLoading } = useQuery({
+    queryKey: ["domains"],
+    queryFn: () => Api.listDomains(),
+  });
+
+  const { data: vpsList = [], isLoading: vpsLoading } = useQuery({
+    queryKey: ["vps"],
+    queryFn: () => Api.listVps(),
+  });
+
+  const isLoading = domainsLoading || vpsLoading;
+
+  // Apply filters client-side
+  const filteredDomains = domains.filter(domain => {
+    if (filters.query && !domain.hostname.toLowerCase().includes(filters.query.toLowerCase())) {
+      return false;
+    }
+    if (filters.vpsId && domain.vps_id !== filters.vpsId) {
+      return false;
+    }
+    if (filters.active !== undefined && domain.active !== filters.active) {
+      return false;
+    }
+    return true;
   });
 
   const getVpsForDomain = (vpsId: string | null) => {
-    if (!vpsId || !data?.vpsList) return null;
-    return data.vpsList.find((v: any) => v.id === vpsId);
+    if (!vpsId || !vpsList) return null;
+    return vpsList.find((v: any) => v.id === vpsId);
   };
 
   if (isLoading) {
@@ -94,7 +88,7 @@ export default function DomainsPage() {
     );
   }
 
-  const { items: domains, total } = data!;
+  const total = filteredDomains.length;
 
   return (
     <div className="space-y-6">
@@ -146,7 +140,7 @@ export default function DomainsPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todas as VPS</SelectItem>
-                  {data?.vpsList.map((vps: any) => (
+                  {vpsList.map((vps: any) => (
                     <SelectItem key={vps.id} value={vps.id}>
                       {vps.name}
                     </SelectItem>
@@ -186,7 +180,7 @@ export default function DomainsPage() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {domains.length === 0 ? (
+          {filteredDomains.length === 0 ? (
             <div className="text-center py-12">
               <Globe className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
               <h3 className="text-lg font-medium mb-2">Nenhum domínio encontrado</h3>
@@ -215,8 +209,8 @@ export default function DomainsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {domains.map((domain: Domain) => {
-                  const vps = getVpsForDomain(domain.currentVpsId || null);
+                {filteredDomains.map((domain: Domain) => {
+                  const vps = getVpsForDomain(domain.vps_id || null);
                   
                   return (
                     <TableRow 
@@ -231,7 +225,7 @@ export default function DomainsPage() {
                         {vps ? (
                           <div className="flex items-center gap-2">
                             <span className="text-sm">{vps.name}</span>
-                            <HealthPill status={vps.status as any} size="sm" />
+                            <HealthPill status={vps.health as any} size="sm" />
                           </div>
                         ) : (
                           <Badge variant="outline">Sem VPS</Badge>
@@ -243,7 +237,7 @@ export default function DomainsPage() {
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        {new Date(domain.createdAt).toLocaleDateString("pt-BR")}
+                        {new Date(domain.created_at).toLocaleDateString("pt-BR")}
                       </TableCell>
                       <TableCell className="text-right">
                         <Button 

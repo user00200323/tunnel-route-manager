@@ -35,7 +35,7 @@ const domainColumns: ColumnDef<Domain>[] = [
             <Globe className="h-4 w-4 text-primary" />
           </div>
           <div>
-            <div className="font-medium">{domain.fqdn}</div>
+            <div className="font-medium">{domain.hostname}</div>
             <div className="text-sm text-muted-foreground">{domain.type}</div>
           </div>
         </div>
@@ -202,16 +202,16 @@ export default function TenantDetailPage() {
     enabled: !!id,
   });
 
-  const { data: tunnelsResponse, isLoading: tunnelsLoading } = useQuery({
-    queryKey: ['tunnels', id],
-    queryFn: () => Api.listTunnels(id),
-    enabled: !!id,
+  const { data: tunnels = [], isLoading: tunnelsLoading } = useQuery({
+    queryKey: ['tunnels'],
+    queryFn: () => Api.listTunnels(),
   });
 
-  const tenant = tenantResponse?.data;
-  const domains = domainsResponse?.data.items || [];
-  const vps = vpsResponse?.data.items || [];
-  const tunnels = tunnelsResponse?.data || [];
+  const tenant = tenantResponse;
+  const domains = domainsResponse || [];
+  const vps = vpsResponse || [];
+
+  const isLoading = tenantLoading || domainsLoading || vpsLoading || tunnelsLoading;
 
   if (tenantLoading) {
     return <div>Carregando...</div>;
@@ -235,7 +235,7 @@ export default function TenantDetailPage() {
           </div>
           <div>
             <h1 className="text-2xl font-bold">{tenant.name}</h1>
-            <p className="text-muted-foreground">/{tenant.slug}</p>
+            <p className="text-muted-foreground">ID: {tenant.id}</p>
           </div>
         </div>
         <div className="ml-auto flex items-center gap-2">
@@ -303,10 +303,10 @@ export default function TenantDetailPage() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">
-                  {new Date(tenant.createdAt).toLocaleDateString('pt-BR')}
+                  {new Date(tenant.created_at).toLocaleDateString('pt-BR')}
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  {Math.floor((Date.now() - new Date(tenant.createdAt).getTime()) / (1000 * 60 * 60 * 24))} dias atrás
+                  {Math.floor((Date.now() - new Date(tenant.created_at).getTime()) / (1000 * 60 * 60 * 24))} dias atrás
                 </p>
               </CardContent>
             </Card>

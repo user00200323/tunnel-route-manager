@@ -18,7 +18,16 @@ export type HealthCheckRequest = {
 export type DomainFilters = {
   query?: string;
   vpsId?: string;
+  domainId?: string;
   active?: boolean;
+  page?: number;
+  pageSize?: number;
+};
+
+export type DeployFilters = {
+  vpsId?: string;
+  domainId?: string;
+  status?: 'pending' | 'running' | 'success' | 'failed';
   page?: number;
   pageSize?: number;
 };

@@ -7,6 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Globe, Server, Activity, RefreshCw, AlertTriangle, CheckCircle, Edit, Trash2, Route } from "lucide-react";
+import { DeploySection } from "@/components/DeploySection";
+import { DnsRecordsManager } from "@/components/DnsRecordsManager";
 import { Api } from "@/services/api";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DomainStatusBadge, HealthStatusBadge } from "@/components/StatusBadge";
@@ -129,7 +131,10 @@ export default function DomainDetailPage() {
             <RefreshCw className={`h-4 w-4 mr-2 ${checkDnsMutation.isPending ? 'animate-spin' : ''}`} />
             Verificar DNS
           </Button>
-          <Button variant="outline">
+          <Button 
+            variant="outline"
+            onClick={() => window.location.href = `/domains/${id}/edit`}
+          >
             <Edit className="h-4 w-4 mr-2" />
             Editar
           </Button>
@@ -266,55 +271,63 @@ export default function DomainDetailPage() {
               </CardContent>
             </Card>
           </div>
+
+          <div className="mt-6">
+            <DeploySection domainId={id} vpsId={domain.vps_id} />
+          </div>
         </TabsContent>
 
         <TabsContent value="dns" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Configuração DNS</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <div className="grid gap-4">
-                  <div>
-                    <label className="text-sm font-medium">Registro A</label>
-                    <div className="text-sm text-muted-foreground">
-                      {connectedVps?.ipv4 ? (
-                        <Copyable text={`${domain.hostname} A ${connectedVps.ipv4}`} />
-                      ) : (
-                        'Nenhum IP configurado'
-                      )}
-                    </div>
-                  </div>
-                  
-                  <div>
-                    <label className="text-sm font-medium">Registro CNAME (www)</label>
-                    <div className="text-sm text-muted-foreground">
-                      <Copyable text={`www.${domain.hostname} CNAME ${domain.hostname}`} />
-                    </div>
-                  </div>
-
-                  {domain.publish_strategy === 'tunnel' && (
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Card>
+              <CardHeader>
+                <CardTitle>Configuração DNS Recomendada</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  <div className="grid gap-4">
                     <div>
-                      <label className="text-sm font-medium">Túnel Cloudflare</label>
+                      <label className="text-sm font-medium">Registro A</label>
                       <div className="text-sm text-muted-foreground">
-                        Configurado via Cloudflare Tunnel
+                        {connectedVps?.ipv4 ? (
+                          <Copyable text={`${domain.hostname} A ${connectedVps.ipv4}`} />
+                        ) : (
+                          'Nenhum IP configurado'
+                        )}
                       </div>
                     </div>
-                  )}
-                </div>
+                    
+                    <div>
+                      <label className="text-sm font-medium">Registro CNAME (www)</label>
+                      <div className="text-sm text-muted-foreground">
+                        <Copyable text={`www.${domain.hostname} CNAME ${domain.hostname}`} />
+                      </div>
+                    </div>
 
-                <Button 
-                  onClick={() => checkDnsMutation.mutate()}
-                  disabled={checkDnsMutation.isPending}
-                  className="w-full"
-                >
-                  <RefreshCw className={`h-4 w-4 mr-2 ${checkDnsMutation.isPending ? 'animate-spin' : ''}`} />
-                  Verificar Configuração DNS
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+                    {domain.publish_strategy === 'tunnel' && (
+                      <div>
+                        <label className="text-sm font-medium">Túnel Cloudflare</label>
+                        <div className="text-sm text-muted-foreground">
+                          Configurado via Cloudflare Tunnel
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <Button 
+                    onClick={() => checkDnsMutation.mutate()}
+                    disabled={checkDnsMutation.isPending}
+                    className="w-full"
+                  >
+                    <RefreshCw className={`h-4 w-4 mr-2 ${checkDnsMutation.isPending ? 'animate-spin' : ''}`} />
+                    Verificar Configuração DNS
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            <DnsRecordsManager domainId={id!} hostname={domain.hostname} />
+          </div>
         </TabsContent>
 
         <TabsContent value="health" className="space-y-4">

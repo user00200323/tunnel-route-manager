@@ -162,6 +162,12 @@ serve(async (req) => {
         result = { message: 'Caddy reloaded successfully' };
         break;
 
+      case 'restart_services':
+        // Restart all services via docker compose
+        await executeSSHCommand(vps, 'cd /opt/app && docker compose restart');
+        result = { message: 'All services restarted successfully' };
+        break;
+
       case 'restart_tunnel':
         if (!vps.tunnel_id) {
           throw new Error('No tunnel configured for this VPS');

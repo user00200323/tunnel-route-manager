@@ -432,6 +432,43 @@ export const Api = {
     }
   },
 
+  // === VPS MANAGEMENT ===
+  async restartVpsServices(vpsId: string): Promise<any> {
+    try {
+      const { data, error } = await supabase.functions.invoke('vps-management', {
+        body: { action: 'restart_services', vpsId }
+      });
+      if (error) throw error;
+      return data;
+    } catch (error) {
+      handleError(error);
+    }
+  },
+
+  async setupVps(vpsId: string, domains: string[] = []): Promise<any> {
+    try {
+      const { data, error } = await supabase.functions.invoke('vps-management', {
+        body: { action: 'setup_vps', vpsId, params: { domains } }
+      });
+      if (error) throw error;
+      return data;
+    } catch (error) {
+      handleError(error);
+    }
+  },
+
+  async checkVpsStatus(vpsId: string): Promise<any> {
+    try {
+      const { data, error } = await supabase.functions.invoke('vps-management', {
+        body: { action: 'check_status', vpsId }
+      });
+      if (error) throw error;
+      return data;
+    } catch (error) {
+      handleError(error);
+    }
+  },
+
   // === CLOUDFLARE IMPORT ===
   async importCloudflareDomainsSync(): Promise<any> {
     try {

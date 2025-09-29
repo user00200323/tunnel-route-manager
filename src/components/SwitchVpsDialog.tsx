@@ -51,27 +51,8 @@ export function SwitchVpsDialog({ open, onOpenChange, domain, currentVps }: Swit
         vps_id: selectedVpsId,
       });
 
-      // Trigger Cloudflare update via edge function
-      const response = await fetch(`https://dblnjqfkfgwtlsscncml.supabase.co/functions/v1/vps-management`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-        },
-        body: JSON.stringify({
-          action: 'switch_domain_vps',
-          domainId: domain.id,
-          newVpsId: selectedVpsId,
-          reason: reason || undefined,
-        }),
-      });
-
-      if (!response.ok) {
-        const error = await response.text();
-        throw new Error(`Erro ao atualizar Cloudflare: ${error}`);
-      }
-
-      return await response.json();
+      // Use assignRoute API function which handles Cloudflare sync
+      await Api.assignRoute(domain.id, selectedVpsId);
     },
     onSuccess: () => {
       toast.success(`Domínio ${domain.hostname} transferido com sucesso!`);

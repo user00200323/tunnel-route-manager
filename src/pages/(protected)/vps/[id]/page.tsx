@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Globe, Server, Activity, RefreshCw, AlertTriangle, CheckCircle, Edit, Play, Pause } from "lucide-react";
+import { DeploySection } from "@/components/DeploySection";
 import { Api } from "@/services/api";
 import { Skeleton } from "@/components/ui/skeleton";
 import { HealthStatusBadge } from "@/components/StatusBadge";
@@ -40,6 +41,17 @@ export default function VpsDetailPage() {
     },
     onError: () => {
       toast.error("Erro ao executar health check");
+    }
+  });
+
+  const restartServicesMutation = useMutation({
+    mutationFn: () => Api.restartVpsServices(id!),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['vps', id] });
+      toast.success("Serviços reiniciados com sucesso!");
+    },
+    onError: () => {
+      toast.error("Erro ao reiniciar serviços");
     }
   });
 
@@ -114,7 +126,10 @@ export default function VpsDetailPage() {
             <RefreshCw className={`h-4 w-4 mr-2 ${runHealthCheckMutation.isPending ? 'animate-spin' : ''}`} />
             Health Check
           </Button>
-          <Button variant="outline">
+          <Button 
+            variant="outline"
+            onClick={() => window.location.href = `/vps/${id}/edit`}
+          >
             <Edit className="h-4 w-4 mr-2" />
             Editar
           </Button>
@@ -166,7 +181,7 @@ export default function VpsDetailPage() {
         </TabsList>
 
         <TabsContent value="overview" className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-4 md:grid-cols-3">
             <Card>
               <CardHeader>
                 <CardTitle>Informações do Servidor</CardTitle>
@@ -246,8 +261,13 @@ export default function VpsDetailPage() {
                   <RefreshCw className={`h-4 w-4 mr-2 ${runHealthCheckMutation.isPending ? 'animate-spin' : ''}`} />
                   Executar Health Check
                 </Button>
-                <Button variant="outline" className="w-full justify-start" disabled>
-                  <Play className="h-4 w-4 mr-2" />
+                <Button 
+                  variant="outline" 
+                  className="w-full justify-start"
+                  onClick={() => restartServicesMutation.mutate()}
+                  disabled={restartServicesMutation.isPending}
+                >
+                  <Play className={`h-4 w-4 mr-2 ${restartServicesMutation.isPending ? 'animate-spin' : ''}`} />
                   Reiniciar Serviços
                 </Button>
                 <Button variant="outline" className="w-full justify-start" disabled>
@@ -260,6 +280,8 @@ export default function VpsDetailPage() {
                 </Button>
               </CardContent>
             </Card>
+
+            <DeploySection vpsId={id} />
           </div>
         </TabsContent>
 

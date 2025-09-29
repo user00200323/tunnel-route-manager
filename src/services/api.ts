@@ -246,7 +246,7 @@ export const Api = {
     }
   },
 
-  async createVps(data: Omit<VPS, 'id' | 'createdAt' | 'updatedAt'>): Promise<VPS> {
+  async createVps(data: any): Promise<VPS> {
     try {
       const { data: newVps, error } = await supabase
         .from('vps_servers')

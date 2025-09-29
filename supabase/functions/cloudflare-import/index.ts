@@ -27,6 +27,10 @@ interface CloudflareZone {
 async function getCloudflareZones(): Promise<CloudflareZone[]> {
   console.log('Fetching zones from Cloudflare...')
   
+  if (!cloudflareToken) {
+    throw new Error('CLOUDFLARE_API_TOKEN not configured')
+  }
+  
   const response = await fetch('https://api.cloudflare.com/client/v4/zones', {
     headers: {
       'Authorization': `Bearer ${cloudflareToken}`,
@@ -37,12 +41,26 @@ async function getCloudflareZones(): Promise<CloudflareZone[]> {
   if (!response.ok) {
     const errorText = await response.text()
     console.error('Cloudflare API error:', response.status, errorText)
-    throw new Error(`Cloudflare API error: ${response.status} ${errorText}`)
+    
+    if (response.status === 403) {
+      throw new Error('Cloudflare API token lacks required permissions. Please ensure your token has Zone.Zone:Read and Zone.DNS:Read permissions.')
+    } else if (response.status === 401) {
+      throw new Error('Invalid Cloudflare API token. Please check your token is correct.')
+    } else {
+      throw new Error(`Cloudflare API error: ${response.status} ${errorText}`)
+    }
   }
 
   const data = await response.json()
-  console.log(`Found ${data.result.length} zones`)
-  return data.result
+  
+  if (!data.success) {
+    const errors = data.errors?.map((e: any) => e.message).join(', ') || 'Unknown error'
+    console.error('Cloudflare API returned errors:', errors)
+    throw new Error(`Cloudflare API errors: ${errors}`)
+  }
+  
+  console.log(`Found ${data.result?.length || 0} zones`)
+  return data.result || []
 }
 
 async function importZonesToDatabase(zones: CloudflareZone[]) {
@@ -93,17 +111,30 @@ async function importZonesToDatabase(zones: CloudflareZone[]) {
     vps = newVps
   }
 
-  // Import domains
-  const domainsToInsert = zones.map(zone => ({
-    hostname: zone.name,
-    fqdn: zone.name,
-    tenant_id: tenant.id,
-    vps_id: vps.id,
-    status: zone.status === 'active' ? 'active' : 'pending',
-    active: zone.status === 'active',
-    created_at: zone.created_on,
-    updated_at: zone.modified_on
-  }))
+  // Import domains - Map Cloudflare status to our domain_status enum
+  const domainsToInsert = zones.map(zone => {
+    let domainStatus = 'pending'
+    if (zone.status === 'active') {
+      domainStatus = 'live'
+    } else if (zone.status === 'pending') {
+      domainStatus = 'pending' 
+    } else if (zone.status === 'initializing') {
+      domainStatus = 'propagating'
+    } else {
+      domainStatus = 'error'
+    }
+
+    return {
+      hostname: zone.name,
+      fqdn: zone.name,
+      tenant_id: tenant.id,
+      vps_id: vps.id,
+      status: domainStatus,
+      active: zone.status === 'active',
+      created_at: zone.created_on,
+      updated_at: zone.modified_on
+    }
+  })
 
   const { data: insertedDomains, error: domainsError } = await supabase
     .from('domains')

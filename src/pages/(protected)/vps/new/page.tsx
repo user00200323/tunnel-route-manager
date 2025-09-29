@@ -15,22 +15,17 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { vpsSchema } from "@/schemas";
+import { Api } from "@/services/api";
 import { ArrowLeft, Server, ExternalLink } from "lucide-react";
 import type { z } from "zod";
 
 type VpsFormData = z.infer<typeof vpsSchema>;
 
-const createVps = async (data: VpsFormData) => {
-  // Mock API call
-  await new Promise(resolve => setTimeout(resolve, 1000));
-  return { id: "new-vps", status: "healthy" as const, ...data };
-};
 
 export default function VpsNewPage() {
   const navigate = useNavigate();
-  const { toast } = useToast();
   const queryClient = useQueryClient();
 
   const form = useForm<VpsFormData>({
@@ -43,21 +38,19 @@ export default function VpsNewPage() {
   });
 
   const createMutation = useMutation({
-    mutationFn: createVps,
+    mutationFn: (data: VpsFormData) => Api.createVps({
+      name: data.name,
+      tunnel_id: data.tunnelId,
+      notes: data.notes,
+      health: 'unknown' as const,
+    }),
     onSuccess: (data) => {
-      toast({
-        title: "VPS criada com sucesso!",
-        description: `A VPS ${data.name} foi adicionada ao sistema.`,
-      });
+      toast.success(`VPS ${data.name} criada com sucesso!`);
       queryClient.invalidateQueries({ queryKey: ["vps"] });
       navigate(`/vps/${data.id}`);
     },
     onError: (error) => {
-      toast({
-        title: "Erro ao criar VPS",
-        description: error instanceof Error ? error.message : "Erro desconhecido",
-        variant: "destructive",
-      });
+      toast.error("Erro ao criar VPS: " + (error instanceof Error ? error.message : "Erro desconhecido"));
     },
   });
 

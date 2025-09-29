@@ -154,6 +154,56 @@ export default function DomainsPage() {
     return { status: 'none', label: 'Não Configurado', connected: false };
   };
 
+  const getConfigurationStatus = (domain: Domain) => {
+    const vps = getVpsForDomain(domain.vps_id || null);
+    const cloudflareStatus = getCloudflareStatus(domain);
+    
+    // Check if domain has DNS records (assume configured if status is live)
+    const hasDnsRecords = domain.status === 'live';
+    
+    // For DNS strategy
+    if (domain.publish_strategy === 'dns') {
+      const hasVps = !!vps && !!vps.ipv4;
+      if (hasDnsRecords && hasVps) {
+        return { status: 'configured', label: '✅ Configurado', color: 'text-emerald-600' };
+      }
+      if (!hasVps) {
+        return { status: 'missing_vps', label: '❌ VPS sem IP', color: 'text-red-600' };
+      }
+      if (!hasDnsRecords) {
+        return { status: 'missing_dns', label: '⚠️ DNS Pendente', color: 'text-amber-600' };
+      }
+    }
+    
+    // For tunnel strategy
+    if (domain.publish_strategy === 'tunnel') {
+      if (cloudflareStatus.connected && domain.tunnel_id) {
+        return { status: 'configured', label: '✅ Configurado', color: 'text-emerald-600' };
+      }
+      if (!domain.tunnel_id) {
+        return { status: 'missing_tunnel', label: '❌ Sem Tunnel', color: 'text-red-600' };
+      }
+      return { status: 'pending', label: '⚠️ Tunnel Pendente', color: 'text-amber-600' };
+    }
+    
+    return { status: 'unknown', label: '❓ Desconhecido', color: 'text-gray-600' };
+  };
+
+  const autoConfigureMutation = useMutation({
+    mutationFn: (domainId: string) => Api.autoConfigureDomain(domainId),
+    onSuccess: (result, domainId) => {
+      if (result.success) {
+        toast.success("Domínio configurado automaticamente com sucesso!");
+      } else {
+        toast.error(`Falha na configuração: ${result.errors.join(', ')}`);
+      }
+      queryClient.invalidateQueries({ queryKey: ["domains"] });
+    },
+    onError: (error) => {
+      toast.error("Erro ao configurar domínio automaticamente: " + error.message);
+    },
+  });
+
   if (isLoading) {
     return (
       <div className="space-y-6">
@@ -380,6 +430,7 @@ export default function DomainsPage() {
                   </TableHead>
                   <TableHead>VPS Atual</TableHead>
                   <TableHead>Cloudflare</TableHead>
+                  <TableHead>Status de Configuração</TableHead>
                   <TableHead>Status Geral</TableHead>
                   <TableHead>Última Verificação</TableHead>
                   <TableHead className="text-right">Ações</TableHead>
@@ -390,13 +441,19 @@ export default function DomainsPage() {
                   const vps = getVpsForDomain(domain.vps_id || null);
                   const domainStatus = getDomainStatus(domain);
                   const tunnelStatus = getTunnelStatus(domain);
+                  const configStatus = getConfigurationStatus(domain);
                   const healthCheck = healthChecks.find((hc: any) => hc.domainId === domain.id);
+                  const isConfiguring = autoConfigureMutation.isPending;
                   
                   return (
                     <TableRow 
                       key={domain.id}
                       className="cursor-pointer hover:bg-muted/50"
-                      onClick={() => navigate(`/domains/${domain.id}`)}
+                      onClick={(e) => {
+                        // Don't navigate if clicking on a button
+                        if ((e.target as HTMLElement).closest('button')) return;
+                        navigate(`/domains/${domain.id}`);
+                      }}
                     >
                       <TableCell className="font-medium">
                         <div className="flex items-center gap-2">
@@ -443,6 +500,34 @@ export default function DomainsPage() {
                             <Badge variant="outline" className="w-fit text-xs">
                               DNS Direto
                             </Badge>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center justify-between">
+                          <span className={`text-sm font-medium ${configStatus.color}`}>
+                            {configStatus.label}
+                          </span>
+                          {configStatus.status !== 'configured' && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                autoConfigureMutation.mutate(domain.id);
+                              }}
+                              disabled={isConfiguring}
+                              className="ml-2 h-7 px-2 text-xs"
+                            >
+                              {isConfiguring ? (
+                                <div className="flex items-center gap-1">
+                                  <div className="h-3 w-3 animate-spin rounded-full border border-current border-t-transparent" />
+                                  <span>Configurando...</span>
+                                </div>
+                              ) : (
+                                'Configurar'
+                              )}
+                            </Button>
                           )}
                         </div>
                       </TableCell>

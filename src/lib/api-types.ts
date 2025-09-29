@@ -31,3 +31,11 @@ export type DeployFilters = {
   page?: number;
   pageSize?: number;
 };
+
+export type AutoConfigurationResult = {
+  domain: string;
+  strategy: string;
+  steps: Array<{ step: string; status: string; error?: string }>;
+  success: boolean;
+  errors: string[];
+};

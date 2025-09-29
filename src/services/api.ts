@@ -15,6 +15,7 @@ import type {
   VpsFilters,
   DeployFilters
 } from '@/types';
+import type { AutoConfigurationResult } from "@/lib/api-types";
 
 // Helper functions
 const handleError = (error: any): never => {
@@ -474,6 +475,19 @@ export const Api = {
     try {
       const { data, error } = await supabase.functions.invoke('vps-management', {
         body: { action: 'update_caddyfile', vpsId }
+      });
+      if (error) throw error;
+      return data;
+    } catch (error) {
+      handleError(error);
+    }
+  },
+
+  // === AUTO-CONFIGURATION ===
+  async autoConfigureDomain(domainId: string): Promise<AutoConfigurationResult> {
+    try {
+      const { data, error } = await supabase.functions.invoke('auto-configure-domain', {
+        body: { domainId }
       });
       if (error) throw error;
       return data;

@@ -9,6 +9,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Globe, Server, Activity, RefreshCw, AlertTriangle, CheckCircle, Edit, Trash2, Route } from "lucide-react";
 import { DeploySection } from "@/components/DeploySection";
 import { DnsRecordsManager } from "@/components/DnsRecordsManager";
+import { ConfigurationStatusSection } from "@/components/ConfigurationStatusSection";
 import { Api } from "@/services/api";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DomainStatusBadge, HealthStatusBadge } from "@/components/StatusBadge";
@@ -193,6 +194,16 @@ export default function DomainDetailPage() {
         </TabsList>
 
         <TabsContent value="overview" className="space-y-4">
+          {/* Configuration Status Section */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Status da Configuração</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ConfigurationStatusSection domain={domain} connectedVps={connectedVps} />
+            </CardContent>
+          </Card>
+
           <div className="grid gap-4 md:grid-cols-2">
             <Card>
               <CardHeader>

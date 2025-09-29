@@ -86,8 +86,12 @@ export function SwitchVpsDialog({ open, onOpenChange, domain, currentVps }: Swit
     },
   });
 
-  const availableVps = vpsList.filter(vps => vps.id !== domain.vps_id);
+  const availableVps = vpsList.filter(vps => vps.id !== domain?.vps_id);
   const selectedVps = vpsList.find(vps => vps.id === selectedVpsId);
+
+  if (!domain) {
+    return null;
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

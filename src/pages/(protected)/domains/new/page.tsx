@@ -260,8 +260,16 @@ export default function DomainsNewPage() {
                   <Button
                     type="submit"
                     disabled={createDomainMutation.isPending}
+                    className="min-w-[140px]"
                   >
-                    {createDomainMutation.isPending ? "Criando..." : "Criar Domínio"}
+                    {createDomainMutation.isPending ? (
+                      <div className="flex items-center gap-2">
+                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                        {publishStrategy === 'dns' ? 'Configurando...' : 'Criando...'}
+                      </div>
+                    ) : (
+                      'Criar Domínio'
+                    )}
                   </Button>
                 </div>
               </form>
@@ -281,17 +289,23 @@ export default function DomainsNewPage() {
             <CardContent className="space-y-4">
               <div>
                 <h4 className="font-medium mb-2">DNS Direto</h4>
-                <p className="text-sm text-muted-foreground">
-                  Aponta o domínio diretamente para o IP do servidor VPS. 
-                  Mais simples mas requer configuração manual do DNS.
+                <p className="text-sm text-muted-foreground mb-2">
+                  Aponta o domínio diretamente para o IP do servidor VPS.
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  ✅ Configura DNS no Cloudflare automaticamente<br/>
+                  ✅ Atualiza Caddyfile na VPS automaticamente
                 </p>
               </div>
               
               <div>
                 <h4 className="font-medium mb-2">Cloudflare Tunnel</h4>
-                <p className="text-sm text-muted-foreground">
-                  Usa túneis do Cloudflare para rotear tráfego. 
-                  Mais seguro e não expõe o IP do servidor.
+                <p className="text-sm text-muted-foreground mb-2">
+                  Usa túneis do Cloudflare para rotear tráfego.
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  ✅ Mais seguro, não expõe IP do servidor<br/>
+                  ⚠️ Requer configuração manual do túnel
                 </p>
               </div>
             </CardContent>

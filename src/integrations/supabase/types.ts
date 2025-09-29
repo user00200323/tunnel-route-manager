@@ -14,7 +14,323 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      audit_logs: {
+        Row: {
+          action: string
+          created_at: string | null
+          entity_id: string | null
+          entity_type: string
+          id: string
+          ip_address: unknown | null
+          new_values: Json | null
+          old_values: Json | null
+          user_agent: string | null
+          user_id: string | null
+        }
+        Insert: {
+          action: string
+          created_at?: string | null
+          entity_id?: string | null
+          entity_type: string
+          id?: string
+          ip_address?: unknown | null
+          new_values?: Json | null
+          old_values?: Json | null
+          user_agent?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          action?: string
+          created_at?: string | null
+          entity_id?: string | null
+          entity_type?: string
+          id?: string
+          ip_address?: unknown | null
+          new_values?: Json | null
+          old_values?: Json | null
+          user_agent?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
+      deploys: {
+        Row: {
+          commit_hash: string | null
+          created_at: string | null
+          domain_id: string | null
+          id: string
+          logs: string | null
+          status: Database["public"]["Enums"]["deploy_status"] | null
+          tenant_id: string | null
+          updated_at: string | null
+          vps_id: string | null
+        }
+        Insert: {
+          commit_hash?: string | null
+          created_at?: string | null
+          domain_id?: string | null
+          id?: string
+          logs?: string | null
+          status?: Database["public"]["Enums"]["deploy_status"] | null
+          tenant_id?: string | null
+          updated_at?: string | null
+          vps_id?: string | null
+        }
+        Update: {
+          commit_hash?: string | null
+          created_at?: string | null
+          domain_id?: string | null
+          id?: string
+          logs?: string | null
+          status?: Database["public"]["Enums"]["deploy_status"] | null
+          tenant_id?: string | null
+          updated_at?: string | null
+          vps_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "deploys_domain_id_fkey"
+            columns: ["domain_id"]
+            isOneToOne: false
+            referencedRelation: "domains"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deploys_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deploys_vps_id_fkey"
+            columns: ["vps_id"]
+            isOneToOne: false
+            referencedRelation: "vps_servers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      domains: {
+        Row: {
+          active: boolean | null
+          created_at: string | null
+          error_message: string | null
+          hostname: string
+          id: string
+          last_check_at: string | null
+          publish_strategy:
+            | Database["public"]["Enums"]["publish_strategy"]
+            | null
+          status: Database["public"]["Enums"]["domain_status"] | null
+          tenant_id: string | null
+          tunnel_id: string | null
+          type: Database["public"]["Enums"]["domain_type"] | null
+          updated_at: string | null
+          vps_id: string | null
+        }
+        Insert: {
+          active?: boolean | null
+          created_at?: string | null
+          error_message?: string | null
+          hostname: string
+          id?: string
+          last_check_at?: string | null
+          publish_strategy?:
+            | Database["public"]["Enums"]["publish_strategy"]
+            | null
+          status?: Database["public"]["Enums"]["domain_status"] | null
+          tenant_id?: string | null
+          tunnel_id?: string | null
+          type?: Database["public"]["Enums"]["domain_type"] | null
+          updated_at?: string | null
+          vps_id?: string | null
+        }
+        Update: {
+          active?: boolean | null
+          created_at?: string | null
+          error_message?: string | null
+          hostname?: string
+          id?: string
+          last_check_at?: string | null
+          publish_strategy?:
+            | Database["public"]["Enums"]["publish_strategy"]
+            | null
+          status?: Database["public"]["Enums"]["domain_status"] | null
+          tenant_id?: string | null
+          tunnel_id?: string | null
+          type?: Database["public"]["Enums"]["domain_type"] | null
+          updated_at?: string | null
+          vps_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "domains_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "domains_tunnel_id_fkey"
+            columns: ["tunnel_id"]
+            isOneToOne: false
+            referencedRelation: "tunnels"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "domains_vps_id_fkey"
+            columns: ["vps_id"]
+            isOneToOne: false
+            referencedRelation: "vps_servers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      health_checks: {
+        Row: {
+          checked_at: string | null
+          domain_id: string | null
+          id: string
+          latency_ms: number | null
+          status_code: number | null
+          url: string
+          vps_id: string | null
+        }
+        Insert: {
+          checked_at?: string | null
+          domain_id?: string | null
+          id?: string
+          latency_ms?: number | null
+          status_code?: number | null
+          url: string
+          vps_id?: string | null
+        }
+        Update: {
+          checked_at?: string | null
+          domain_id?: string | null
+          id?: string
+          latency_ms?: number | null
+          status_code?: number | null
+          url?: string
+          vps_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "health_checks_domain_id_fkey"
+            columns: ["domain_id"]
+            isOneToOne: false
+            referencedRelation: "domains"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "health_checks_vps_id_fkey"
+            columns: ["vps_id"]
+            isOneToOne: false
+            referencedRelation: "vps_servers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tenants: {
+        Row: {
+          created_at: string | null
+          id: string
+          name: string
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          name: string
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          name?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      tunnels: {
+        Row: {
+          created_at: string | null
+          id: string
+          last_seen_at: string | null
+          name: string
+          provider: string | null
+          status: Database["public"]["Enums"]["tunnel_status"] | null
+          tunnel_id: string
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          last_seen_at?: string | null
+          name: string
+          provider?: string | null
+          status?: Database["public"]["Enums"]["tunnel_status"] | null
+          tunnel_id: string
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          last_seen_at?: string | null
+          name?: string
+          provider?: string | null
+          status?: Database["public"]["Enums"]["tunnel_status"] | null
+          tunnel_id?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      vps_servers: {
+        Row: {
+          created_at: string | null
+          health: Database["public"]["Enums"]["health_status"] | null
+          id: string
+          ipv4: unknown | null
+          ipv6: unknown | null
+          last_seen_at: string | null
+          name: string
+          notes: string | null
+          provider: Database["public"]["Enums"]["vps_provider"] | null
+          region: string | null
+          tunnel_id: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          health?: Database["public"]["Enums"]["health_status"] | null
+          id?: string
+          ipv4?: unknown | null
+          ipv6?: unknown | null
+          last_seen_at?: string | null
+          name: string
+          notes?: string | null
+          provider?: Database["public"]["Enums"]["vps_provider"] | null
+          region?: string | null
+          tunnel_id?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          health?: Database["public"]["Enums"]["health_status"] | null
+          id?: string
+          ipv4?: unknown | null
+          ipv6?: unknown | null
+          last_seen_at?: string | null
+          name?: string
+          notes?: string | null
+          provider?: Database["public"]["Enums"]["vps_provider"] | null
+          region?: string | null
+          tunnel_id?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -23,7 +339,13 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      [_ in never]: never
+      deploy_status: "pending" | "running" | "success" | "failed"
+      domain_status: "pending" | "propagating" | "live" | "error"
+      domain_type: "apex" | "www" | "custom"
+      health_status: "healthy" | "degraded" | "down" | "unknown"
+      publish_strategy: "dns" | "tunnel"
+      tunnel_status: "connected" | "disconnected" | "error"
+      vps_provider: "digitalocean" | "aws" | "linode" | "vultr" | "other"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +472,14 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      deploy_status: ["pending", "running", "success", "failed"],
+      domain_status: ["pending", "propagating", "live", "error"],
+      domain_type: ["apex", "www", "custom"],
+      health_status: ["healthy", "degraded", "down", "unknown"],
+      publish_strategy: ["dns", "tunnel"],
+      tunnel_status: ["connected", "disconnected", "error"],
+      vps_provider: ["digitalocean", "aws", "linode", "vultr", "other"],
+    },
   },
 } as const

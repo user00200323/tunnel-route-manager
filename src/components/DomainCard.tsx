@@ -144,21 +144,27 @@ export function DomainCard({ domain, vps, onSwitchVps }: DomainCardProps) {
 
   const getDomainStatus = () => {
     if (!domain.active) return { status: "error", label: "Inativo", color: "text-red-500" };
+    
+    // Only show "live" if we have positive health checks
+    if (health?.dnsOk && (domain.publish_strategy !== 'tunnel' || health?.tunnelOk)) {
+      return { status: "success", label: "Ativo", color: "text-emerald-500" };
+    }
+    
     if (domain.status === 'error') return { status: "error", label: "Erro", color: "text-red-500" };
     if (vps && vps.health === 'down') return { status: "error", label: "VPS Offline", color: "text-red-500" };
     if (vps && vps.health === 'degraded') return { status: "warning", label: "Degradado", color: "text-amber-500" };
-    if (domain.status === 'live') return { status: "success", label: "Ativo", color: "text-emerald-500" };
+    
     return { status: "pending", label: "Pendente", color: "text-gray-500" };
   };
 
   const getCloudflareStatus = () => {
-    if (domain.publish_strategy === 'tunnel' && domain.tunnel_id) {
-      return { connected: true, label: 'Tunnel', variant: 'default' as const };
+    if (domain.publish_strategy === 'tunnel' && domain.tunnel_id && health?.tunnelOk) {
+      return { connected: true, label: 'Tunnel Ativo', variant: 'default' as const };
     }
-    if (domain.publish_strategy === 'dns' && domain.status === 'live') {
-      return { connected: true, label: 'DNS', variant: 'secondary' as const };
+    if (domain.publish_strategy === 'dns' && health?.dnsOk) {
+      return { connected: true, label: 'DNS Configurado', variant: 'secondary' as const };
     }
-    return { connected: false, label: 'Não Config.', variant: 'outline' as const };
+    return { connected: false, label: 'Não Configurado', variant: 'outline' as const };
   };
 
   const getConfigurationStatus = useMemo(() => {
@@ -231,6 +237,15 @@ export function DomainCard({ domain, vps, onSwitchVps }: DomainCardProps) {
     }
 
     if (domain.publish_strategy === "dns") {
+      if (!health.dnsOk) {
+        return { 
+          status: "error", 
+          label: "DNS não configurado", 
+          color: "text-red-600",
+          details: "DNS não foi detectado ou configurado"
+        };
+      }
+      
       if (health.agentOk === false) {
         details = healthDetails.agentRequestError || 
                  healthDetails.agentError || 
@@ -243,16 +258,11 @@ export function DomainCard({ domain, vps, onSwitchVps }: DomainCardProps) {
         };
       }
       
-      return health.dnsOk ? { 
+      return { 
         status: "success", 
         label: "Configurado", 
         color: "text-emerald-600",
         details: "DNS configurado e VPS operando"
-      } : { 
-        status: "warning", 
-        label: "DNS pendente", 
-        color: "text-amber-600",
-        details: "Configuração DNS não detectada"
       };
     }
 
@@ -368,7 +378,7 @@ export function DomainCard({ domain, vps, onSwitchVps }: DomainCardProps) {
                 <Shield className="h-4 w-4 text-muted-foreground" />
                 <span className="text-sm text-muted-foreground">Cloudflare:</span>
               </div>
-              <CloudflareStatusIndicator domain={domain} />
+              <CloudflareStatusIndicator domain={domain} health={health} />
             </div>
 
             {/* Configuration Status */}

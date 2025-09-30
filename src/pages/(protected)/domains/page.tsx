@@ -157,20 +157,27 @@ export default function DomainsPage() {
 
   const getDomainStatus = (domain: Domain) => {
     const vps = getVpsForDomain(domain.vps_id || null);
-    const hasCloudflareSetup = domain.publish_strategy === 'tunnel' || domain.tunnel_id;
     
     if (!domain.active) return "error";
-    if (!hasCloudflareSetup && domain.status === 'error') return "error";
     if (domain.status === 'error') return "error";
     if (vps && vps.health === 'down') return "error";
     if (vps && vps.health === 'degraded') return "propagating";
+    
+    // Only show "live" if domain actually has live status
     if (domain.status === 'live') return "live";
+    
     return "pending";
   };
 
   const getCloudflareStatus = (domain: Domain) => {
+    // Only show connected if we have actual verification
     if (domain.publish_strategy === 'tunnel' && domain.tunnel_id) {
-      return { status: 'tunnel', label: 'Tunnel Ativo', connected: true };
+      // TODO: Add health check integration here to verify tunnel is actually working
+      return { 
+        status: 'tunnel', 
+        label: 'Tunnel Configurado', 
+        connected: false // Changed to false until we verify it's actually working
+      };
     }
     if (domain.publish_strategy === 'dns') {
       return { 

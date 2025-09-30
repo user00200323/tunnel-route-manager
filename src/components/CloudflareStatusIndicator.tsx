@@ -13,6 +13,7 @@ interface Domain {
 
 interface CloudflareStatusIndicatorProps {
   domain: Domain;
+  health?: any; // Optional health parameter for future use
 }
 
 interface NameserverInfo {
@@ -49,7 +50,7 @@ const fetchNameserverInfo = async (domain: string): Promise<NameserverInfo> => {
   return data.data;
 };
 
-export function CloudflareStatusIndicator({ domain }: CloudflareStatusIndicatorProps) {
+export function CloudflareStatusIndicator({ domain, health }: CloudflareStatusIndicatorProps) {
   const { data: nameserverInfo, isLoading: nsLoading } = useQuery({
     queryKey: ['nameservers', domain.hostname],
     queryFn: () => fetchNameserverInfo(domain.hostname),
@@ -123,11 +124,19 @@ export function CloudflareStatusIndicator({ domain }: CloudflareStatusIndicatorP
           <Tooltip>
             <TooltipTrigger>
               <Badge 
-                variant={tunnelInfo?.status === 'connected' ? "default" : "destructive"}
+                variant={
+                  health?.tunnelOk && health?.cnameOk ? "default" : 
+                  health?.tunnelOk === false || health?.cnameOk === false ? "destructive" :
+                  tunnelInfo?.status === 'connected' ? "secondary" : "destructive"
+                }
                 className="text-xs"
               >
                 <Zap className="w-3 h-3 mr-1" />
-                {tunnelInfo?.status === 'connected' ? 'Tunnel OK' : 'Tunnel Down'}
+                {health?.tunnelOk && health?.cnameOk ? 'Tunnel Ativo' :
+                 health?.tunnelOk === false ? 'Tunnel Offline' :
+                 health?.cnameOk === false ? 'CNAME Inválido' :
+                 health ? 'Verificando...' :
+                 tunnelInfo?.status === 'connected' ? 'Tunnel OK' : 'Tunnel Down'}
               </Badge>
             </TooltipTrigger>
             <TooltipContent>
@@ -140,23 +149,73 @@ export function CloudflareStatusIndicator({ domain }: CloudflareStatusIndicatorP
                   ID: {tunnelInfo?.tunnel_id || 'N/A'}
                 </p>
                 <p className={`text-xs ${tunnelInfo?.status === 'connected' ? 'text-green-400' : 'text-red-400'}`}>
-                  Status: {tunnelInfo?.status || 'Desconhecido'}
+                  Status DB: {tunnelInfo?.status || 'Desconhecido'}
                 </p>
+                {health && (
+                  <>
+                    <p className={`text-xs ${health.tunnelOk ? 'text-green-400' : 'text-red-400'}`}>
+                      Conectividade: {health.tunnelOk ? '✓ Ativo' : '✗ Offline'}
+                    </p>
+                    <p className={`text-xs ${health.cnameOk ? 'text-green-400' : 'text-red-400'}`}>
+                      CNAME: {health.cnameOk ? '✓ Correto' : '✗ Inválido'}
+                    </p>
+                    {health.details?.expectedCname && (
+                      <p className="text-xs text-muted-foreground">
+                        Esperado: {health.details.expectedCname}
+                      </p>
+                    )}
+                    {health.details?.cnameFound && (
+                      <p className="text-xs text-muted-foreground">
+                        Atual: {health.details.cnameFound}
+                      </p>
+                    )}
+                  </>
+                )}
               </div>
             </TooltipContent>
           </Tooltip>
         )}
 
-        {/* SSL Status - placeholder for now */}
+        {/* SSL Status - based on real health data */}
         <Tooltip>
           <TooltipTrigger>
-            <Badge variant="default" className="text-xs">
+            <Badge 
+              variant={
+                health?.dnsOk ? "default" : 
+                health?.dnsOk === false ? "destructive" : 
+                "secondary"
+              } 
+              className="text-xs"
+            >
               <Shield className="w-3 h-3 mr-1" />
-              SSL
+              {health?.dnsOk ? 'SSL Ativo' : 
+               health?.dnsOk === false ? 'SSL Erro' : 
+               'SSL ?'}
             </Badge>
           </TooltipTrigger>
           <TooltipContent>
-            <p className="text-sm">Certificado SSL ativo</p>
+            <div className="text-sm">
+              <p className="font-medium">Status SSL/DNS:</p>
+              {health ? (
+                <>
+                  <p className={`text-xs ${health.dnsOk ? 'text-green-400' : 'text-red-400'}`}>
+                    DNS: {health.dnsOk ? '✓ Configurado' : '✗ Não configurado'}
+                  </p>
+                  {health.details?.vpsDataError && (
+                    <p className="text-xs text-red-400">
+                      VPS: {health.details.vpsDataError}
+                    </p>
+                  )}
+                  {health.details?.agentRequestError && (
+                    <p className="text-xs text-amber-400">
+                      Agent: {health.details.agentRequestError}
+                    </p>
+                  )}
+                </>
+              ) : (
+                <p className="text-xs text-muted-foreground">Verificando status...</p>
+              )}
+            </div>
           </TooltipContent>
         </Tooltip>
       </div>

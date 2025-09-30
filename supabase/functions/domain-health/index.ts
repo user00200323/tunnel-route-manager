@@ -43,8 +43,16 @@ serve(async (req) => {
   }
 
   try {
-    const url = new URL(req.url);
-    const domainId = url.searchParams.get("id");
+    let domainId: string;
+
+    // Accept domain ID from both query params and request body
+    if (req.method === 'GET') {
+      const url = new URL(req.url);
+      domainId = url.searchParams.get("id") || '';
+    } else {
+      const body = await req.json();
+      domainId = body.id || '';
+    }
     
     if (!domainId) {
       return jsonResponse({ error: "Missing domain id parameter" }, 400);

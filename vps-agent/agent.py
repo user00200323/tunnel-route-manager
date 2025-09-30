@@ -298,6 +298,55 @@ def status():
             'error': str(e)
         }), 500
 
+@app.route('/exec-command', methods=['POST'])
+@require_auth
+def exec_command():
+    """Execute safe commands on the VPS"""
+    try:
+        data = request.get_json()
+        command = data.get('command')
+        
+        if not command:
+            return jsonify({
+                'success': False,
+                'error': 'Command is required'
+            }), 400
+        
+        # Security: Only allow specific safe commands
+        allowed_commands = [
+            'sed -n \'1,120p\' /opt/app/Caddyfile',
+            'cat /opt/app/docker-compose.yml',
+            'ls -la /opt/app/',
+            'docker compose ps',
+            'docker compose ps --format json'
+        ]
+        
+        # Allow backup commands with timestamp
+        if command.startswith('cp /opt/app/Caddyfile /opt/app/Caddyfile.bak.'):
+            allowed_commands.append(command)
+        
+        if command not in allowed_commands:
+            return jsonify({
+                'success': False,
+                'error': f'Command not allowed: {command}'
+            }), 403
+        
+        logger.info(f"Executing command: {command}")
+        result = run_command(command, cwd=APP_DIR)
+        
+        return jsonify({
+            'success': result['success'],
+            'output': result['stdout'] if result['success'] else None,
+            'error': result['stderr'] if not result['success'] else None
+        })
+        
+    except Exception as e:
+        logger.error(f"Exec command endpoint error: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
 if __name__ == '__main__':
     # Production setup
     app.run(host='0.0.0.0', port=8888, debug=False)

@@ -34,19 +34,42 @@ async function getZoneId(domain: string): Promise<string> {
   const parts = domain.split('.');
   const rootDomain = parts.slice(-2).join('.');
   
-  const response = await fetch(`https://api.cloudflare.com/v4/zones?name=${rootDomain}`, {
+  console.log(`Extracted root domain: ${rootDomain} from original domain: ${domain}`);
+  console.log(`Domain parts: ${JSON.stringify(parts)}`);
+  
+  const apiUrl = `https://api.cloudflare.com/v4/zones?name=${rootDomain}`;
+  console.log(`Making API request to: ${apiUrl}`);
+  
+  const response = await fetch(apiUrl, {
     headers: {
       'Authorization': `Bearer ${cloudflareToken}`,
       'Content-Type': 'application/json',
     },
   });
 
-  const data = await response.json();
+  console.log(`Cloudflare API response status: ${response.status} ${response.statusText}`);
   
-  if (!data.success || data.result.length === 0) {
-    throw new Error(`Zone not found for domain: ${rootDomain}`);
+  const data = await response.json();
+  console.log(`Cloudflare API response data:`, JSON.stringify(data, null, 2));
+  
+  if (!response.ok) {
+    console.error(`Cloudflare API error: ${response.status} ${response.statusText}`);
+    console.error(`Error details:`, JSON.stringify(data, null, 2));
+    throw new Error(`Cloudflare API request failed: ${response.status} ${response.statusText}`);
+  }
+  
+  if (!data.success) {
+    console.error(`Cloudflare API returned success=false:`, JSON.stringify(data.errors, null, 2));
+    throw new Error(`Cloudflare API error: ${JSON.stringify(data.errors)}`);
+  }
+  
+  if (data.result.length === 0) {
+    console.error(`No zones found for domain: ${rootDomain}`);
+    console.log(`Available zones in account:`, JSON.stringify(data.result, null, 2));
+    throw new Error(`Zone not found for domain: ${rootDomain}. No zones match this domain in your Cloudflare account.`);
   }
 
+  console.log(`Found zone: ${data.result[0].name} with ID: ${data.result[0].id}`);
   return data.result[0].id;
 }
 

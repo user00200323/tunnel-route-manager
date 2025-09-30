@@ -294,25 +294,41 @@ async function importZonesToDatabase(zones: CloudflareZone[], tunnels: Cloudflar
       domainStatus = 'error'
     }
 
-    // Try to find matching tunnel by domain name or similar naming pattern
-    // Enhanced logic to better match domains like merlibre.shop and mercallbr.shop to vps-merlibre
+    // Enhanced domain-tunnel matching with fuzzy logic and pattern recognition
     let tunnelId = null
+    let matchConfidence = 0
+    
     for (const [tunnelName, cfTunnelId] of tunnelMap) {
-      const domainBase = zone.name.split('.')[0] // e.g., "merlibre" from "merlibre.shop"
-      const tunnelBase = tunnelName.replace('vps-', '').replace('-', '') // e.g., "merlibre" from "vps-merlibre"
+      const domainBase = zone.name.split('.')[0].toLowerCase()
+      const tunnelBase = tunnelName.replace('vps-', '').replace('-', '').toLowerCase()
       
-      // Check for exact matches, partial matches, and common prefixes
-      if (tunnelName.includes(zone.name.replace('.', '-')) || 
-          tunnelName.includes(domainBase) ||
-          zone.name.includes(tunnelName) ||
-          domainBase.includes(tunnelBase) ||
-          tunnelBase.includes(domainBase) ||
-          // Special case for similar domain names (mercallbr vs merlibre)
-          (domainBase.length >= 6 && tunnelBase.length >= 6 && 
-           domainBase.substring(0, 6) === tunnelBase.substring(0, 6))) {
+      let currentConfidence = 0
+      
+      // Exact match (highest confidence)
+      if (domainBase === tunnelBase) {
+        currentConfidence = 100
+      }
+      // Contains match
+      else if (domainBase.includes(tunnelBase) || tunnelBase.includes(domainBase)) {
+        currentConfidence = 80
+      }
+      // Levenshtein distance for similar names (mercallbr vs merlibre)
+      else {
+        const distance = levenshteinDistance(domainBase, tunnelBase)
+        const maxLength = Math.max(domainBase.length, tunnelBase.length)
+        const similarity = ((maxLength - distance) / maxLength) * 100
+        
+        // Accept if similarity is > 70% for names with length >= 6
+        if (similarity > 70 && domainBase.length >= 6 && tunnelBase.length >= 6) {
+          currentConfidence = similarity
+        }
+      }
+      
+      // Use the best match found
+      if (currentConfidence > matchConfidence && currentConfidence >= 70) {
+        matchConfidence = currentConfidence
         tunnelId = cfTunnelId
-        console.log(`Domain ${zone.name} matched to tunnel ${tunnelName} (${cfTunnelId})`)
-        break
+        console.log(`Domain ${zone.name} matched to tunnel ${tunnelName} (${cfTunnelId}) with ${currentConfidence.toFixed(1)}% confidence`)
       }
     }
 
@@ -394,11 +410,8 @@ serve(async (req) => {
   try {
     console.log('Starting Cloudflare import process...')
     
-    // Fetch zones and tunnels from Cloudflare
-    const [zones, tunnels] = await Promise.all([
-      getCloudflareZones(),
-      getCloudflareTunnels()
-    ])
+    console.log(`Found ${zones.length} zones`)
+    console.log(`Found ${tunnels.length} tunnels`)
     
     // Import tunnels first
     await importTunnelsToDatabase(tunnels)

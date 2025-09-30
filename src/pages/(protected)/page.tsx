@@ -4,16 +4,18 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Plus, Globe, Server, Activity, TrendingUp, Zap } from "lucide-react";
+import { Plus, Globe, Server, Activity, TrendingUp, Zap, Settings } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { HealthPill } from "@/components/HealthPill";
 import { AutoConfigurationDialog } from "@/components/AutoConfigurationDialog";
+import { DomainTunnelManager } from "@/components/DomainTunnelManager";
 import type { Domain, VPS, Tunnel } from "@/types";
 import { Api } from "@/services/api";
 
 export default function Dashboard() {
   const navigate = useNavigate();
   const [showAutoConfig, setShowAutoConfig] = useState(false);
+  const [showTunnelManager, setShowTunnelManager] = useState(false);
   
   const { data: domains = [], isLoading: domainsLoading } = useQuery({
     queryKey: ["domains"],
@@ -209,6 +211,10 @@ export default function Dashboard() {
         domains={domains}
         vpsServers={vpsList}
         tunnels={tunnels}
+      />
+      <DomainTunnelManager 
+        open={showTunnelManager} 
+        onOpenChange={setShowTunnelManager} 
       />
     </div>
   );

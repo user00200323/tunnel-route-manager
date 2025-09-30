@@ -372,6 +372,29 @@ export function DomainCard({ domain, vps, onSwitchVps }: DomainCardProps) {
               </div>
             </div>
 
+            {/* Tunnel Info */}
+            {domain.publish_strategy === 'tunnel' && (
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Network className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm text-muted-foreground">Tunnel:</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium">
+                    {(domain as any).tunnel?.name || 'Configurado'}
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 px-2"
+                    onClick={() => setShowTunnelDialog(true)}
+                  >
+                    <Settings className="h-3 w-3" />
+                  </Button>
+                </div>
+              </div>
+            )}
+
             {/* Cloudflare Status */}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">

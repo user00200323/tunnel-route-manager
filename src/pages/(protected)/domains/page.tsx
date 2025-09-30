@@ -32,6 +32,7 @@ import {
   List
 } from "lucide-react";
 import { DomainCard } from "@/components/DomainCard";
+import { VpsSyncComponent } from "@/components/VpsSyncComponent";
 import { SwitchVpsDialog } from "@/components/SwitchVpsDialog";
 import type { Domain, VPS } from "@/types";
 import { Api } from "@/services/api";
@@ -87,6 +88,9 @@ export default function DomainsPage() {
     queryKey: ["vps"],
     queryFn: () => Api.listVps(),
   });
+
+  // Get the default VPS (first VPS or the one with domains)
+  const defaultVps = vpsList?.[0];
 
   const { data: healthChecks = [] } = useQuery({
     queryKey: ["health-checks"],
@@ -222,6 +226,17 @@ export default function DomainsPage() {
 
   return (
     <div className="space-y-6 animate-fade-in">
+      {/* VPS Sync Section */}
+      {defaultVps && (
+        <VpsSyncComponent 
+          vpsId={defaultVps.id} 
+          vpsName={defaultVps.name}
+          onSyncComplete={() => {
+            queryClient.invalidateQueries({ queryKey: ["domains"] });
+            queryClient.invalidateQueries({ queryKey: ["vps"] });
+          }}
+        />
+      )}
       {/* Smart Header */}
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
         <div>

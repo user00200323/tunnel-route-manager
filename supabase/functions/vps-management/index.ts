@@ -277,13 +277,13 @@ serve(async (req) => {
         break;
 
       case 'exec_command':
-        if (!data.command) {
+        if (!params.command) {
           return new Response(
             JSON.stringify({ success: false, error: 'Command is required' }),
             { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           );
         }
-        result = await executeVpsCommand(vps, 'exec-command', { command: data.command });
+        result = await executeVpsCommand(vps, 'exec-command', { command: params.command });
         break;
 
       default:

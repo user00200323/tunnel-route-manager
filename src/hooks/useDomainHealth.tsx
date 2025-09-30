@@ -1,46 +1,36 @@
 import useSWR from 'swr';
-import { supabase } from '@/integrations/supabase/client';
+import { useErrorLogger } from '@/hooks/useErrorLogger';
+import { domainHealthService, type DomainHealth } from '@/services/domainHealthService';
 
-interface DomainHealth {
-  dnsOk: boolean;
-  tunnelOk?: boolean;
-  agentOk?: boolean;
-  details?: Record<string, any>;
-}
-
-const healthFetcher = async (url: string) => {
-  const session = await supabase.auth.getSession();
-  const token = session.data.session?.access_token;
-  
-  if (!token) {
-    throw new Error('Authentication required');
-  }
-
-  const response = await fetch(url, {
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'apikey': import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-      'Content-Type': 'application/json',
-    }
+const healthFetcher = async (domainId: string) => {
+  console.log(`[useDomainHealth] Fetching health for domain: ${domainId}`);
+  return domainHealthService.checkDomainHealth(domainId, {
+    retries: 2,
+    timeout: 10000,
+    useCache: true
   });
-  
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-  }
-  
-  return response.json();
 };
 
 export function useDomainHealth(domainId: string, status: string) {
-  const { data: health, isLoading, error } = useSWR<DomainHealth>(
-    `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/domain-health?id=${domainId}`,
-    healthFetcher,
+  const { logError } = useErrorLogger();
+
+  const { data: health, isLoading, error, mutate } = useSWR<DomainHealth>(
+    domainId ? `domain-health-${domainId}` : null,
+    () => healthFetcher(domainId),
     {
       refreshInterval: status === 'error' ? 30000 : 60000, // Adaptive polling
-      errorRetryCount: 3,
-      errorRetryInterval: 10000,
-      dedupingInterval: 5000,
+      errorRetryCount: 2,
+      errorRetryInterval: 5000,
+      dedupingInterval: 10000,
       revalidateOnFocus: false,
+      onError: (error) => {
+        logError(error, {
+          component: 'useDomainHealth',
+          action: 'health-fetch',
+          domainId,
+          metadata: { status }
+        });
+      },
       shouldRetryOnError: (error) => {
         // Don't retry on auth errors
         return !error.message.includes('401') && !error.message.includes('Authentication');
@@ -48,9 +38,25 @@ export function useDomainHealth(domainId: string, status: string) {
     }
   );
 
+  const refreshHealth = async () => {
+    try {
+      const newHealth = await domainHealthService.refreshDomainHealth(domainId);
+      mutate(newHealth, false);
+      return newHealth;
+    } catch (error) {
+      logError(error instanceof Error ? error : new Error('Failed to refresh health'), {
+        component: 'useDomainHealth',
+        action: 'refresh-health',
+        domainId
+      });
+      throw error;
+    }
+  };
+
   return {
     health,
     isLoading,
-    error
+    error,
+    refreshHealth
   };
 }

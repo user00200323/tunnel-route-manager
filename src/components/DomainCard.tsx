@@ -32,7 +32,9 @@ import { ConfirmDialog } from "./ConfirmDialog";
 import { toast } from "sonner";
 import type { Domain, VPS } from "@/types";
 import { useDomainHealth } from "@/hooks/useDomainHealth";
+import { useErrorLogger } from "@/hooks/useErrorLogger";
 import { CloudflareStatusIndicator } from "./CloudflareStatusIndicator";
+import { DomainErrorDisplay } from "./DomainErrorDisplay";
 
 interface DomainHealth {
   dnsOk: boolean;
@@ -50,11 +52,21 @@ interface DomainCardProps {
 export function DomainCard({ domain, vps, onSwitchVps }: DomainCardProps) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { logAndToast, logError } = useErrorLogger();
   const [showTunnelDialog, setShowTunnelDialog] = useState(false);
   const [showResetDialog, setShowResetDialog] = useState(false);
 
   // Use optimized health check hook
-  const { health, isLoading: healthLoading, error: healthError } = useDomainHealth(domain.id, domain.status);
+  const { health, isLoading: healthLoading, error: healthError, refreshHealth } = useDomainHealth(domain.id, domain.status);
+
+  // Log health check errors
+  if (healthError) {
+    logError(healthError, { 
+      component: 'DomainCard', 
+      action: 'health-check',
+      domainId: domain.id 
+    });
+  }
 
   const autoConfigureMutation = useMutation({
     mutationFn: (domainId: string) => Api.autoConfigureDomain(domainId),
@@ -62,12 +74,43 @@ export function DomainCard({ domain, vps, onSwitchVps }: DomainCardProps) {
       if (result.success) {
         toast.success("Domínio configurado automaticamente!");
       } else {
-        toast.error(`Falha na configuração: ${result.errors.join(', ')}`);
+        logAndToast(
+          `Falha na configuração: ${result.errors.join(', ')}`,
+          { 
+            component: 'DomainCard', 
+            action: 'auto-configure',
+            domainId: domain.id,
+            metadata: { result }
+          },
+          {
+            title: 'Erro na Auto-Configuração',
+            description: `Domínio: ${domain.hostname}`,
+            action: {
+              label: 'Tentar Novamente',
+              onClick: () => autoConfigureMutation.mutate(domain.id)
+            }
+          }
+        );
       }
       queryClient.invalidateQueries({ queryKey: ["domains"] });
     },
     onError: (error) => {
-      toast.error("Erro ao configurar domínio: " + error.message);
+      logAndToast(
+        error,
+        { 
+          component: 'DomainCard', 
+          action: 'auto-configure',
+          domainId: domain.id 
+        },
+        {
+          title: 'Erro ao Configurar Domínio',
+          description: `Falha na configuração de ${domain.hostname}`,
+          action: {
+            label: 'Tentar Novamente',
+            onClick: () => autoConfigureMutation.mutate(domain.id)
+          }
+        }
+      );
     },
   });
 
@@ -84,7 +127,18 @@ export function DomainCard({ domain, vps, onSwitchVps }: DomainCardProps) {
       queryClient.invalidateQueries({ queryKey: ["domains"] });
     },
     onError: (error) => {
-      toast.error("Erro ao resetar domínio: " + error.message);
+      logAndToast(
+        error,
+        { 
+          component: 'DomainCard', 
+          action: 'reset-domain',
+          domainId: domain.id 
+        },
+        {
+          title: 'Erro ao Resetar Domínio',
+          description: `Falha ao resetar ${domain.hostname}`,
+        }
+      );
     },
   });
 
@@ -108,23 +162,106 @@ export function DomainCard({ domain, vps, onSwitchVps }: DomainCardProps) {
   };
 
   const getConfigurationStatus = useMemo(() => {
-    if (healthLoading) return { status: "loading", label: "Verificando...", color: "text-blue-600" };
-    if (!health) return { status: "idle", label: "Sem dados", color: "text-gray-600" };
+    if (healthLoading) return { 
+      status: "loading", 
+      label: "Verificando...", 
+      color: "text-blue-600",
+      details: "Executando verificação de saúde..."
+    };
+    
+    if (!health) return { 
+      status: "idle", 
+      label: "Sem dados", 
+      color: "text-gray-600",
+      details: "Nenhuma verificação de saúde disponível"
+    };
 
+    // Show specific error details
+    let details = "";
+    const healthDetails = health.details || {};
+    
     if (domain.publish_strategy === "tunnel") {
-      if (!domain.tunnel_id) return { status: "warn", label: "Incompleto (sem túnel)", color: "text-red-600" };
-      if (!health.dnsOk) return { status: "warn", label: "DNS pendente", color: "text-amber-600" };
-      if (health.tunnelOk === false) return { status: "warn", label: "Túnel offline", color: "text-red-600" };
-      if (health.agentOk === false) return { status: "warn", label: "VPS indisponível", color: "text-amber-600" };
-      return { status: "configured", label: "Configurado", color: "text-emerald-600" };
+      if (!domain.tunnel_id) return { 
+        status: "error", 
+        label: "Túnel não configurado", 
+        color: "text-red-600",
+        details: "Domínio configurado para tunnel mas sem tunnel_id associado"
+      };
+      
+      if (!health.dnsOk) {
+        details = healthDetails.cnameFound ? 
+          `CNAME incorreto: ${healthDetails.cnameFound}` : 
+          "CNAME não encontrado";
+        return { 
+          status: "error", 
+          label: "DNS pendente", 
+          color: "text-amber-600",
+          details
+        };
+      }
+      
+      if (health.tunnelOk === false) {
+        details = `Túnel sem conexões ativas (${healthDetails.tunnelConnections || 0} conexões)`;
+        return { 
+          status: "error", 
+          label: "Túnel offline", 
+          color: "text-red-600",
+          details
+        };
+      }
+      
+      if (health.agentOk === false) {
+        details = healthDetails.agentRequestError || 
+                 healthDetails.agentError || 
+                 `Agent status: ${healthDetails.agentStatus}`;
+        return { 
+          status: "warning", 
+          label: "VPS indisponível", 
+          color: "text-amber-600",
+          details: `Agent: ${details}`
+        };
+      }
+      
+      return { 
+        status: "success", 
+        label: "Totalmente configurado", 
+        color: "text-emerald-600",
+        details: "DNS, túnel e VPS operando normalmente"
+      };
     }
 
     if (domain.publish_strategy === "dns") {
-      return health.dnsOk ? { status: "configured", label: "Configurado", color: "text-emerald-600" }
-                          : { status: "warn", label: "DNS pendente", color: "text-amber-600" };
+      if (health.agentOk === false) {
+        details = healthDetails.agentRequestError || 
+                 healthDetails.agentError || 
+                 `Agent status: ${healthDetails.agentStatus}`;
+        return { 
+          status: "warning", 
+          label: "VPS com problemas", 
+          color: "text-amber-600",
+          details: `Agent: ${details}`
+        };
+      }
+      
+      return health.dnsOk ? { 
+        status: "success", 
+        label: "Configurado", 
+        color: "text-emerald-600",
+        details: "DNS configurado e VPS operando"
+      } : { 
+        status: "warning", 
+        label: "DNS pendente", 
+        color: "text-amber-600",
+        details: "Configuração DNS não detectada"
+      };
     }
 
-    return { status: "idle", label: "Desconhecido", color: "text-gray-600" };
+    return { 
+      status: "idle", 
+      label: "Estratégia desconhecida", 
+      color: "text-gray-600",
+      details: `Estratégia: ${domain.publish_strategy}`
+    };
   }, [domain, health, healthLoading]);
 
   const domainStatus = getDomainStatus();
@@ -187,13 +324,20 @@ export function DomainCard({ domain, vps, onSwitchVps }: DomainCardProps) {
                     Trocar VPS
                   </DropdownMenuItem>
                 )}
-                <DropdownMenuItem 
-                  onClick={() => autoConfigureMutation.mutate(domain.id)}
-                  disabled={isLoading}
-                >
-                  <RefreshCw className="mr-2 h-4 w-4" />
-                  Auto-configurar
-                </DropdownMenuItem>
+                  <DropdownMenuItem 
+                    onClick={() => autoConfigureMutation.mutate(domain.id)}
+                    disabled={isLoading}
+                  >
+                    <RefreshCw className="mr-2 h-4 w-4" />
+                    Auto-configurar
+                  </DropdownMenuItem>
+                  <DropdownMenuItem 
+                    onClick={() => refreshHealth()}
+                    disabled={healthLoading}
+                  >
+                    <RefreshCw className="mr-2 h-4 w-4" />
+                    Verificar Saúde
+                  </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem 
                   onClick={() => setShowResetDialog(true)}
@@ -233,9 +377,18 @@ export function DomainCard({ domain, vps, onSwitchVps }: DomainCardProps) {
                 <Settings className="h-4 w-4 text-muted-foreground" />
                 <span className="text-sm text-muted-foreground">Config:</span>
               </div>
-              <span className={`text-sm font-medium ${configStatus.color}`}>
-                {configStatus.label}
-              </span>
+              <div className="text-right">
+                <span className={`text-sm font-medium ${configStatus.color}`}>
+                  {configStatus.label}
+                </span>
+                {configStatus.details && (
+                  <div className="text-xs text-muted-foreground mt-1" title={configStatus.details}>
+                    {configStatus.details.length > 30 ? 
+                      `${configStatus.details.substring(0, 30)}...` : 
+                      configStatus.details}
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Last Check */}
@@ -248,6 +401,20 @@ export function DomainCard({ domain, vps, onSwitchVps }: DomainCardProps) {
                 <span className="text-sm">
                   {new Date(domain.last_check_at).toLocaleString('pt-BR')}
                 </span>
+              </div>
+            )}
+
+            {/* Error Display */}
+            {(configStatus.status === 'error' || configStatus.status === 'warning') && (
+              <div className="mt-4 pt-4 border-t">
+                <DomainErrorDisplay
+                  domain={domain}
+                  health={health}
+                  onRetry={() => refreshHealth()}
+                  onConfigure={() => autoConfigureMutation.mutate(domain.id)}
+                  onViewDetails={() => navigate(`/domains/${domain.id}`)}
+                  size="sm"
+                />
               </div>
             )}
           </div>

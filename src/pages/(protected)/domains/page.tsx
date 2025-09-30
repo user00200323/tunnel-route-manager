@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRealtimeData } from "@/hooks/useRealtimeData";
+import { useErrorLogger } from "@/hooks/useErrorLogger";
 import { useNavigate } from "react-router-dom";
 import { useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -41,6 +42,7 @@ import { toast } from "sonner";
 export default function DomainsPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { logAndToast, logInfo } = useErrorLogger();
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [filters, setFilters] = useState({
     query: "",
@@ -60,13 +62,14 @@ export default function DomainsPage() {
   // Auto-refresh every 30 seconds
   useEffect(() => {
     const interval = setInterval(() => {
+      logInfo('Auto-refreshing data...', { component: 'DomainsPage', action: 'auto-refresh' });
       queryClient.invalidateQueries({ queryKey: ["domains"] });
       queryClient.invalidateQueries({ queryKey: ["vps"] });
       queryClient.invalidateQueries({ queryKey: ["health-checks"] });
     }, 30000);
 
     return () => clearInterval(interval);
-  }, [queryClient]);
+  }, [queryClient, logInfo]);
 
   const importMutation = useMutation({
     mutationFn: () => Api.importCloudflareDomainsSync(),
@@ -75,7 +78,18 @@ export default function DomainsPage() {
       queryClient.invalidateQueries({ queryKey: ["domains"] });
     },
     onError: (error) => {
-      toast.error("Erro ao importar domínios: " + error.message);
+      logAndToast(
+        error,
+        { component: 'DomainsPage', action: 'import-cloudflare' },
+        {
+          title: 'Erro ao Importar Domínios',
+          description: 'Falha na importação da Cloudflare',
+          action: {
+            label: 'Tentar Novamente',
+            onClick: () => importMutation.mutate()
+          }
+        }
+      );
     },
   });
   
@@ -108,7 +122,7 @@ export default function DomainsPage() {
 
   const isLoading = domainsLoading || vpsLoading;
 
-  // Apply filters client-side
+  // Apply filters client-side with logging
   const filteredDomains = domains.filter(domain => {
     if (filters.query && !domain.hostname.toLowerCase().includes(filters.query.toLowerCase())) {
       return false;
@@ -124,6 +138,17 @@ export default function DomainsPage() {
     }
     return true;
   });
+
+  // Log filter usage for debugging
+  useEffect(() => {
+    if (Object.values(filters).some(f => f !== "" && f !== undefined && f !== false)) {
+      logInfo(`Filters applied: ${JSON.stringify(filters)}, Results: ${filteredDomains.length}/${domains.length}`, {
+        component: 'DomainsPage',
+        action: 'filter-applied',
+        metadata: { filters, resultCount: filteredDomains.length, totalCount: domains.length }
+      });
+    }
+  }, [filters, filteredDomains.length, domains.length, logInfo]);
 
   const getVpsForDomain = (vpsId: string | null) => {
     if (!vpsId || !vpsList) return null;

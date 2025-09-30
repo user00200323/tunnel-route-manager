@@ -9,7 +9,7 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey);
 // Cloudflare configuration
 const CF_API = "https://api.cloudflare.com/client/v4";
 const CF_TOKEN = Deno.env.get("CLOUDFLARE_API_TOKEN")!;
-const AGENT_CALL_TOKEN = Deno.env.get("VPS_AGENT_TOKEN")!;
+const AGENT_TOKEN = Deno.env.get("VPS_AGENT_TOKEN")!;
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -75,7 +75,10 @@ serve(async (req) => {
     let tunnelOk = false;
     let agentOk = false;
     let cnameOk = false;
-    let details: Record<string, any> = {};
+    let details: Record<string, any> = {
+      timestamp: new Date().toISOString(),
+      strategy: domain.publish_strategy
+    };
 
     // Only check DNS and tunnel if domain uses tunnel strategy
     if (domain.publish_strategy === 'tunnel' && domain.tunnel_id) {
@@ -141,20 +144,41 @@ serve(async (req) => {
 
         if (vpsData && !vpsError) {
           const agentUrl = vpsData.agent_url || `http://${vpsData.ipv4}:8888`;
-          const agentResponse = await fetch(`${agentUrl}/health`, {
-            headers: { 
-              'Authorization': 'Bearer 3db4fe2fb1d43942ae895f927efef38d2bbc19aec275c2138cb1765a692c3cd5',
-              'Content-Type': 'application/json'
-            },
-            signal: AbortSignal.timeout(5000) // 5 second timeout
-          });
-          agentOk = agentResponse.ok;
-          details.agentStatus = agentResponse.status;
-          details.agentUrl = agentUrl;
+          console.log(`Checking VPS agent at: ${agentUrl}`);
+          
+          try {
+            const agentResponse = await fetch(`${agentUrl}/status`, {
+              headers: { 
+                'Authorization': `Bearer ${AGENT_TOKEN}`,
+                'Content-Type': 'application/json'
+              },
+              signal: AbortSignal.timeout(8000) // 8 second timeout
+            });
+            
+            agentOk = agentResponse.ok;
+            details.agentStatus = agentResponse.status;
+            details.agentUrl = agentUrl;
+            
+            if (agentResponse.ok) {
+              const agentData = await agentResponse.json();
+              details.agentData = agentData;
+              console.log(`VPS agent health: OK - ${JSON.stringify(agentData)}`);
+            } else {
+              const errorText = await agentResponse.text().catch(() => 'No response body');
+              details.agentError = errorText;
+              console.log(`VPS agent health: FAILED - Status ${agentResponse.status}: ${errorText}`);
+            }
+          } catch (agentError) {
+            console.error(`VPS agent request failed:`, agentError);
+            details.agentRequestError = agentError instanceof Error ? agentError.message : 'Unknown error';
+          }
+        } else {
+          console.error(`Failed to get VPS data:`, vpsError);
+          details.vpsDataError = vpsError?.message || 'VPS not found';
         }
       } catch (error) {
-        console.error('Agent check failed:', error);
-        details.agentError = error instanceof Error ? error.message : 'Unknown agent error';
+        console.error('VPS check failed:', error);
+        details.vpsCheckError = error instanceof Error ? error.message : 'Unknown VPS error';
       }
     }
 

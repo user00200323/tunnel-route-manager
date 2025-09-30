@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import useSWR from 'swr';
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -32,6 +33,15 @@ import { ConfirmDialog } from "./ConfirmDialog";
 import { toast } from "sonner";
 import type { Domain, VPS } from "@/types";
 
+interface DomainHealth {
+  dnsOk: boolean;
+  tunnelOk?: boolean;
+  agentOk?: boolean;
+  details?: Record<string, any>;
+}
+
+const fetcher = (url: string) => fetch(url).then(res => res.json());
+
 interface DomainCardProps {
   domain: Domain;
   vps?: VPS | null;
@@ -43,6 +53,17 @@ export function DomainCard({ domain, vps, onSwitchVps }: DomainCardProps) {
   const queryClient = useQueryClient();
   const [showTunnelDialog, setShowTunnelDialog] = useState(false);
   const [showResetDialog, setShowResetDialog] = useState(false);
+
+  // Health check hook with real-time updates
+  const { data: health, isLoading: healthLoading } = useSWR<DomainHealth>(
+    `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/domain-health?id=${domain.id}`,
+    fetcher, 
+    { 
+      refreshInterval: 15000, // 15s for "real-time" updates
+      errorRetryCount: 2,
+      errorRetryInterval: 5000
+    }
+  );
 
   const autoConfigureMutation = useMutation({
     mutationFn: (domainId: string) => Api.autoConfigureDomain(domainId),
@@ -95,38 +116,29 @@ export function DomainCard({ domain, vps, onSwitchVps }: DomainCardProps) {
     return { connected: false, label: 'Não Config.', variant: 'outline' as const };
   };
 
-  const getConfigurationStatus = () => {
-    const cloudflareStatus = getCloudflareStatus();
-    
-    if (domain.publish_strategy === 'dns') {
-      const hasVps = !!vps && !!vps.ipv4;
-      const hasDnsRecords = domain.status === 'live';
-      
-      if (hasDnsRecords && hasVps) {
-        return { status: 'configured', label: 'Configurado', color: 'text-emerald-600' };
-      }
-      if (!hasVps) {
-        return { status: 'missing_vps', label: 'VPS sem IP', color: 'text-red-600' };
-      }
-      return { status: 'missing_dns', label: 'DNS Pendente', color: 'text-amber-600' };
+  const getConfigurationStatus = useMemo(() => {
+    if (healthLoading) return { status: "loading", label: "Verificando...", color: "text-blue-600" };
+    if (!health) return { status: "idle", label: "Sem dados", color: "text-gray-600" };
+
+    if (domain.publish_strategy === "tunnel") {
+      if (!domain.tunnel_id) return { status: "warn", label: "Incompleto (sem túnel)", color: "text-red-600" };
+      if (!health.dnsOk) return { status: "warn", label: "DNS pendente", color: "text-amber-600" };
+      if (health.tunnelOk === false) return { status: "warn", label: "Túnel offline", color: "text-red-600" };
+      if (health.agentOk === false) return { status: "warn", label: "VPS indisponível", color: "text-amber-600" };
+      return { status: "configured", label: "Configurado", color: "text-emerald-600" };
     }
-    
-    if (domain.publish_strategy === 'tunnel') {
-      if (cloudflareStatus.connected && domain.tunnel_id) {
-        return { status: 'configured', label: 'Configurado', color: 'text-emerald-600' };
-      }
-      if (!domain.tunnel_id) {
-        return { status: 'missing_tunnel', label: 'Sem Tunnel', color: 'text-red-600' };
-      }
-      return { status: 'pending', label: 'Tunnel Pendente', color: 'text-amber-600' };
+
+    if (domain.publish_strategy === "dns") {
+      return health.dnsOk ? { status: "configured", label: "Configurado", color: "text-emerald-600" }
+                          : { status: "warn", label: "DNS pendente", color: "text-amber-600" };
     }
-    
-    return { status: 'unknown', label: 'Desconhecido', color: 'text-gray-600' };
-  };
+
+    return { status: "idle", label: "Desconhecido", color: "text-gray-600" };
+  }, [domain, health, healthLoading]);
 
   const domainStatus = getDomainStatus();
   const cloudflareStatus = getCloudflareStatus();
-  const configStatus = getConfigurationStatus();
+  const configStatus = getConfigurationStatus;
   const isLoading = autoConfigureMutation.isPending || resetMutation.isPending;
 
   return (

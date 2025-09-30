@@ -308,6 +308,7 @@ export type Database = {
       }
       tunnels: {
         Row: {
+          cf_tunnel_id: string | null
           created_at: string | null
           id: string
           last_seen_at: string | null
@@ -318,6 +319,7 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
+          cf_tunnel_id?: string | null
           created_at?: string | null
           id?: string
           last_seen_at?: string | null
@@ -328,6 +330,7 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
+          cf_tunnel_id?: string | null
           created_at?: string | null
           id?: string
           last_seen_at?: string | null

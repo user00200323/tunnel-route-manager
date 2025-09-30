@@ -12,6 +12,26 @@ const cloudflareToken = Deno.env.get('CLOUDFLARE_API_TOKEN')!
 
 const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
+// Utils function for fuzzy matching
+function levenshteinDistance(a: string, b: string): number {
+  const m = a.length, n = b.length;
+  if (m === 0) return n;
+  if (n === 0) return m;
+  const dp = Array.from({ length: m + 1 }, (_, i) => Array(n + 1).fill(0));
+  for (let i = 0; i <= m; i++) dp[i][0] = i;
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++)
+    for (let j = 1; j <= n; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      dp[i][j] = Math.min(
+        dp[i - 1][j] + 1,
+        dp[i][j - 1] + 1,
+        dp[i - 1][j - 1] + cost
+      );
+    }
+  return dp[m][n];
+}
+
 interface CloudflareZone {
   id: string
   name: string
@@ -33,6 +53,7 @@ interface CloudflareTunnel {
     uuid: string
     is_pending_reconnect: boolean
   }>
+  connections?: Array<any>
 }
 
 async function getCloudflareZones(): Promise<CloudflareZone[]> {
@@ -121,325 +142,247 @@ async function getCloudflareTunnels(): Promise<CloudflareTunnel[]> {
   return data.result || []
 }
 
-async function importTunnelsToDatabase(tunnels: CloudflareTunnel[]) {
-  console.log('Starting tunnel import to database...')
-  
-  // Add detailed logging for tunnel data structure
-  console.log('=== TUNNEL DATA STRUCTURE ANALYSIS ===')
-  tunnels.forEach((tunnel, index) => {
-    console.log(`\nTunnel ${index + 1}: ${tunnel.name}`)
-    console.log(`- ID: ${tunnel.id}`)
-    console.log(`- Created: ${tunnel.created_at}`)
-    console.log(`- Full tunnel object:`, JSON.stringify(tunnel, null, 2))
-    
-    // Check different possible connection fields
-    console.log(`- tunnel.conns:`, tunnel.conns)
-    console.log(`- tunnel.connections:`, (tunnel as any).connections)
-    console.log(`- tunnel.status:`, (tunnel as any).status)
-    console.log(`- tunnel.active:`, (tunnel as any).active)
-    
-    // Check if conns exists and its structure
-    if (tunnel.conns) {
-      console.log(`- conns array length: ${tunnel.conns.length}`)
-      console.log(`- conns structure:`, JSON.stringify(tunnel.conns, null, 2))
-    } else {
-      console.log(`- conns field is missing or null`)
-    }
-    
-    // Check for alternative connection data
-    const altConnections = (tunnel as any).connections;
-    if (altConnections) {
-      console.log(`- connections field found:`, JSON.stringify(altConnections, null, 2))
-    }
-  })
-  console.log('=== END TUNNEL DATA ANALYSIS ===\n')
-  
-  const tunnelsToUpsert = tunnels.map(tunnel => {
-    // Improved status detection logic
-    let status = 'disconnected';
-    
-    // Method 1: Check tunnel.conns (original method)
-    if (tunnel.conns && tunnel.conns.length > 0) {
-      status = 'connected';
-      console.log(`Tunnel ${tunnel.name}: Status = connected (via conns, count: ${tunnel.conns.length})`)
-    }
-    // Method 2: Check alternative connections field
-    else if ((tunnel as any).connections && (tunnel as any).connections.length > 0) {
-      status = 'connected';
-      console.log(`Tunnel ${tunnel.name}: Status = connected (via connections, count: ${(tunnel as any).connections.length})`)
-    }
-    // Method 3: Check if tunnel has status field
-    else if ((tunnel as any).status === 'active' || (tunnel as any).status === 'connected') {
-      status = 'connected';
-      console.log(`Tunnel ${tunnel.name}: Status = connected (via status field: ${(tunnel as any).status})`)
-    }
-    // Method 4: Assume active if created recently (fallback)
-    else {
-      const createdAt = new Date(tunnel.created_at);
-      const hoursSinceCreated = (Date.now() - createdAt.getTime()) / (1000 * 60 * 60);
-      if (hoursSinceCreated < 24) {
-        status = 'connected'; // Assume recently created tunnels are likely connected
-        console.log(`Tunnel ${tunnel.name}: Status = connected (fallback - created ${hoursSinceCreated.toFixed(1)}h ago)`)
-      } else {
-        console.log(`Tunnel ${tunnel.name}: Status = disconnected (no connection data found)`)
-      }
-    }
-    
-    return {
-      tunnel_id: tunnel.id,
-      name: tunnel.name,
-      provider: 'cloudflared',
-      status: status as 'connected' | 'disconnected',
-      last_seen_at: new Date().toISOString(),
-      created_at: tunnel.created_at,
-      updated_at: new Date().toISOString()
-    }
-  })
-
-  const { data: upsertedTunnels, error: tunnelsError } = await supabase
-    .from('tunnels')
-    .upsert(tunnelsToUpsert, { 
-      onConflict: 'tunnel_id',
-      ignoreDuplicates: false 
-    })
-    .select()
-
-  if (tunnelsError) {
-    console.error('Error upserting tunnels:', tunnelsError)
-    throw tunnelsError
+function determineTunnelStatus(tunnel: CloudflareTunnel): 'connected' | 'disconnected' {
+  // Check different possible connection fields
+  if (tunnel.conns && tunnel.conns.length > 0) {
+    return 'connected';
   }
-
-  console.log(`Successfully processed ${upsertedTunnels?.length || 0} tunnels`)
-  return upsertedTunnels || []
+  if (tunnel.connections && tunnel.connections.length > 0) {
+    return 'connected';
+  }
+  // Fallback for recently created tunnels
+  const createdAt = new Date(tunnel.created_at);
+  const hoursSinceCreated = (Date.now() - createdAt.getTime()) / (1000 * 60 * 60);
+  if (hoursSinceCreated < 24) {
+    return 'connected'; // Assume recently created tunnels are likely connected
+  }
+  return 'disconnected';
 }
 
-async function importZonesToDatabase(zones: CloudflareZone[], tunnels: CloudflareTunnel[]) {
-  console.log('Starting import to database...')
+async function importTunnelsToDatabase(tunnels: CloudflareTunnel[]) {
+  console.log(`Importing ${tunnels.length} tunnels to database...`);
   
-  // Create a default tenant if none exists
+  const tunnelData = tunnels.map(tunnel => ({
+    cf_tunnel_id: tunnel.id, // Use cf_tunnel_id for Cloudflare ID
+    name: tunnel.name,
+    provider: 'cloudflared',
+    status: determineTunnelStatus(tunnel),
+    last_seen_at: tunnel.conns && tunnel.conns.length > 0 
+      ? new Date().toISOString() 
+      : tunnel.created_at ? new Date(tunnel.created_at) : null,
+    created_at: tunnel.created_at ? new Date(tunnel.created_at) : new Date(),
+    updated_at: new Date()
+  }));
+
+  // Use upsert to handle existing tunnels
+  const { data, error } = await supabase
+    .from('tunnels')
+    .upsert(tunnelData, { 
+      onConflict: 'cf_tunnel_id',
+      ignoreDuplicates: false 
+    })
+    .select('id, name, cf_tunnel_id');
+
+  if (error) {
+    console.error('Error importing tunnels:', error);
+    throw error;
+  }
+
+  console.log(`Successfully imported ${data?.length || 0} tunnels`);
+  return data || [];
+}
+
+async function importZonesToDatabase(zones: CloudflareZone[], nameToDbId: Map<string, string>, cfIdToDbId: Map<string, string>) {
+  console.log(`Processing ${zones.length} zones for domain import...`);
+
+  // Ensure default tenant exists
   let { data: tenant } = await supabase
     .from('tenants')
     .select('id')
-    .limit(1)
-    .single()
+    .eq('name', 'Default Tenant')
+    .maybeSingle();
 
   if (!tenant) {
     const { data: newTenant, error: tenantError } = await supabase
       .from('tenants')
-      .insert([{ name: 'Default Tenant' }])
+      .insert({ name: 'Default Tenant' })
       .select('id')
-      .single()
-
+      .single();
+    
     if (tenantError) {
-      console.error('Error creating tenant:', tenantError)
-      throw tenantError
+      console.error('Error creating default tenant:', tenantError);
+      throw tenantError;
     }
-    tenant = newTenant
+    tenant = newTenant;
   }
 
-  // Create a default VPS if none exists
+  // Ensure default VPS exists
   let { data: vps } = await supabase
     .from('vps_servers')
     .select('id')
-    .limit(1)
-    .single()
+    .eq('name', 'Default VPS')
+    .maybeSingle();
 
   if (!vps) {
     const { data: newVps, error: vpsError } = await supabase
       .from('vps_servers')
-      .insert([{ 
+      .insert({ 
         name: 'Default VPS',
-        health: 'healthy'
-      }])
+        provider: 'other',
+        health: 'unknown'
+      })
       .select('id')
-      .single()
-
+      .single();
+    
     if (vpsError) {
-      console.error('Error creating VPS:', vpsError)
-      throw vpsError
+      console.error('Error creating default VPS:', vpsError);
+      throw vpsError;
     }
-    vps = newVps
+    vps = newVps;
   }
 
-  // Get existing domains to track what's new vs updated
-  const { data: existingDomains } = await supabase
-    .from('domains')
-    .select('hostname, tunnel_id')
+  let importedDomains = 0;
+  let tunnelDomains = 0;
+  let dnsDomains = 0;
 
-  const existingHostnames = new Set(existingDomains?.map(d => d.hostname) || [])
-
-  // Query database tunnels to get UUIDs for foreign key references
-  const { data: dbTunnels } = await supabase
-    .from('tunnels')
-    .select('id, name, tunnel_id')
-  
-  // Create a map of tunnel names to their database UUIDs (not Cloudflare IDs)
-  const tunnelMap = new Map<string, string>()
-  dbTunnels?.forEach(tunnel => {
-    tunnelMap.set(tunnel.name, tunnel.id) // Use database UUID, not Cloudflare tunnel_id
-  })
-  
-  console.log(`Created tunnel mapping for ${tunnelMap.size} tunnels`)
-
-  // Import domains - Map Cloudflare status to our domain_status enum
-  const domainsToUpsert = zones.map(zone => {
-    let domainStatus = 'pending'
-    if (zone.status === 'active') {
-      domainStatus = 'live'
-    } else if (zone.status === 'pending') {
-      domainStatus = 'pending' 
-    } else if (zone.status === 'initializing') {
-      domainStatus = 'propagating'
-    } else {
-      domainStatus = 'error'
-    }
-
-    // Enhanced domain-tunnel matching with fuzzy logic and pattern recognition
-    let tunnelId = null
-    let matchConfidence = 0
-    
-    for (const [tunnelName, cfTunnelId] of tunnelMap) {
-      const domainBase = zone.name.split('.')[0].toLowerCase()
-      const tunnelBase = tunnelName.replace('vps-', '').replace('-', '').toLowerCase()
+  for (const zone of zones) {
+    try {
+      // Get DNS records for this zone
+      const dnsRecords = await getZoneDnsRecords(zone.id);
       
-      let currentConfidence = 0
-      
-      // Exact match (highest confidence)
-      if (domainBase === tunnelBase) {
-        currentConfidence = 100
-      }
-      // Contains match
-      else if (domainBase.includes(tunnelBase) || tunnelBase.includes(domainBase)) {
-        currentConfidence = 80
-      }
-      // Levenshtein distance for similar names (mercallbr vs merlibre)
-      else {
-        const distance = levenshteinDistance(domainBase, tunnelBase)
-        const maxLength = Math.max(domainBase.length, tunnelBase.length)
-        const similarity = ((maxLength - distance) / maxLength) * 100
+      for (const record of dnsRecords) {
+        if (record.type !== 'CNAME') continue;
         
-        // Accept if similarity is > 70% for names with length >= 6
-        if (similarity > 70 && domainBase.length >= 6 && tunnelBase.length >= 6) {
-          currentConfidence = similarity
+        const hostname = record.name;
+        
+        // Extract cf_tunnel_id from CNAME content (*.cfargotunnel.com)
+        const cfTunnelMatch = /^([0-9a-f-]{36})\.cfargotunnel\.com\.?$/i.exec(record.content || "");
+        const cfTunnelId = cfTunnelMatch?.[1] || null;
+        const localTunnelUuid = cfTunnelId ? cfIdToDbId.get(cfTunnelId) ?? null : null;
+
+        const publish_strategy = localTunnelUuid ? 'tunnel' : 'dns';
+        
+        // Create domain entry
+        const domainData = {
+          hostname,
+          fqdn: hostname,
+          type: 'apex' as const,
+          tenant_id: tenant.id,
+          publish_strategy,
+          tunnel_id: localTunnelUuid, // Use local UUID, not CF ID
+          vps_id: localTunnelUuid ? vps.id : null, // Associate with default VPS if tunnel
+          status: 'live' as const,
+          active: true,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        };
+
+        const { error: domainError } = await supabase
+          .from('domains')
+          .upsert(domainData, { 
+            onConflict: 'hostname',
+            ignoreDuplicates: false 
+          });
+
+        if (domainError) {
+          console.error(`Error upserting domain ${hostname}:`, domainError);
+        } else {
+          importedDomains++;
+          if (publish_strategy === 'tunnel') {
+            tunnelDomains++;
+          } else {
+            dnsDomains++;
+          }
         }
       }
-      
-      // Use the best match found
-      if (currentConfidence > matchConfidence && currentConfidence >= 70) {
-        matchConfidence = currentConfidence
-        tunnelId = cfTunnelId
-        console.log(`Domain ${zone.name} matched to tunnel ${tunnelName} (${cfTunnelId}) with ${currentConfidence.toFixed(1)}% confidence`)
-      }
+    } catch (error) {
+      console.error(`Error processing zone ${zone.name}:`, error);
     }
-
-    // Determine publish_strategy based on tunnel presence
-    // CRITICAL: Respect the valid_publish_strategy constraint
-    let publishStrategy: 'dns' | 'tunnel'
-    let finalVpsId: string | null
-    let finalTunnelId: string | null
-    
-    if (tunnelId) {
-      // Domain uses tunnel → strategy = 'tunnel', vps_id = NULL
-      publishStrategy = 'tunnel'
-      finalVpsId = null
-      finalTunnelId = tunnelId
-      console.log(`Domain ${zone.name} assigned to tunnel ${tunnelId}`)
-    } else {
-      // Domain uses DNS → strategy = 'dns', tunnel_id = NULL
-      publishStrategy = 'dns'
-      finalVpsId = vps.id
-      finalTunnelId = null
-    }
-
-    return {
-      hostname: zone.name,
-      fqdn: zone.name,
-      tenant_id: tenant.id,
-      publish_strategy: publishStrategy,
-      vps_id: finalVpsId,
-      tunnel_id: finalTunnelId,
-      status: domainStatus,
-      active: zone.status === 'active',
-      created_at: zone.created_on,
-      updated_at: zone.modified_on
-    }
-  })
-
-  console.log(`Processing ${domainsToUpsert.length} domains from Cloudflare`)
-  console.log(`Found ${existingHostnames.size} existing domains in database`)
-
-  // Use upsert to handle both new and existing domains
-  const { data: upsertedDomains, error: domainsError } = await supabase
-    .from('domains')
-    .upsert(domainsToUpsert, { 
-      onConflict: 'hostname',
-      ignoreDuplicates: false 
-    })
-    .select()
-
-  if (domainsError) {
-    console.error('Error upserting domains:', domainsError)
-    throw domainsError
   }
 
-  // Count new vs updated domains
-  const newDomainsCount = domainsToUpsert.filter(d => !existingHostnames.has(d.hostname)).length
-  const updatedDomainsCount = domainsToUpsert.filter(d => existingHostnames.has(d.hostname)).length
-  const domainsWithTunnels = domainsToUpsert.filter(d => d.tunnel_id).length
-
-  console.log(`Successfully processed ${upsertedDomains?.length || 0} domains`)
-  console.log(`- New domains: ${newDomainsCount}`)
-  console.log(`- Updated domains: ${updatedDomainsCount}`)
-  console.log(`- Domains with tunnels: ${domainsWithTunnels}`)
-  
   return {
-    domains: upsertedDomains || [],
-    newCount: newDomainsCount,
-    updatedCount: updatedDomainsCount,
-    totalCount: upsertedDomains?.length || 0,
-    tunnelCount: domainsWithTunnels
+    importedDomains,
+    tunnelDomains,
+    dnsDomains
+  };
+}
+
+async function getZoneDnsRecords(zoneId: string) {
+  const response = await fetch(
+    `https://api.cloudflare.com/client/v4/zones/${zoneId}/dns_records`,
+    {
+      headers: {
+        'Authorization': `Bearer ${cloudflareToken}`,
+        'Content-Type': 'application/json',
+      },
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch DNS records for zone ${zoneId}: ${response.statusText}`);
   }
+
+  const data = await response.json();
+  return data.result || [];
 }
 
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders })
+    return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    console.log('Starting Cloudflare import process...')
+    console.log('Starting Cloudflare import process...');
     
-    console.log(`Found ${zones.length} zones`)
-    console.log(`Found ${tunnels.length} tunnels`)
+    // 1) Liste TÚNEIS e faça UPSERT, retornando UUIDs LOCAIS
+    const cfTunnels = await getCloudflareTunnels();
+    if (!cfTunnels) {
+      throw new Error('Failed to fetch tunnels from Cloudflare');
+    }
     
-    // Import tunnels first
-    await importTunnelsToDatabase(tunnels)
+    const upsertedTunnels = await importTunnelsToDatabase(cfTunnels);
     
-    // Import zones with tunnel associations
-    const importedDomains = await importZonesToDatabase(zones, tunnels)
+    // Monte mapas por UUID LOCAL (id) e por ID do CF
+    const nameToDbId = new Map<string, string>();
+    const cfIdToDbId = new Map<string, string>();
+    upsertedTunnels.forEach(t => {
+      nameToDbId.set(t.name, t.id);
+      cfIdToDbId.set(t.cf_tunnel_id, t.id);
+    });
+    
+    // 2) Liste ZONAS (só agora você pode usar 'zones')
+    const zones = await getCloudflareZones();
+    if (!zones) {
+      throw new Error('Failed to fetch zones from Cloudflare');
+    }
+    
+    console.log(`Found ${zones.length} zones`);
+    console.log(`Found ${cfTunnels.length} tunnels`);
+    
+    // 3) Importe domínios por zona (idempotente), usando **UUID local**
+    const domainStats = await importZonesToDatabase(zones, nameToDbId, cfIdToDbId);
+    
+    console.log('Import completed successfully');
     
     return new Response(
       JSON.stringify({
         success: true,
-        message: `Successfully imported ${importedDomains.totalCount} domains and ${tunnels.length} tunnels from Cloudflare (${importedDomains.newCount} new domains, ${importedDomains.updatedCount} updated, ${importedDomains.tunnelCount} with tunnels)`,
-        domains: importedDomains.domains,
-        tunnels: tunnels,
-        statistics: {
-          total: importedDomains.totalCount,
-          new: importedDomains.newCount,
-          updated: importedDomains.updatedCount,
-          tunnels: tunnels.length,
-          domainsWithTunnels: importedDomains.tunnelCount
+        message: 'Cloudflare data imported successfully',
+        stats: {
+          zones: zones.length,
+          tunnels: cfTunnels.length,
+          ...domainStats
         }
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200,
+        status: 200
       }
-    )
+    );
   } catch (error) {
-    console.error('Import error:', error)
+    console.error('Import error:', error);
+    
     return new Response(
       JSON.stringify({
         success: false,
@@ -447,8 +390,8 @@ serve(async (req) => {
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 500,
+        status: 500
       }
-    )
+    );
   }
-})
+});

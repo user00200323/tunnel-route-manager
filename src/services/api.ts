@@ -483,6 +483,31 @@ export const Api = {
     }
   },
 
+  // === HEALTH MONITORING ===
+  async runHealthCheckAll(): Promise<any> {
+    try {
+      const { data, error } = await supabase.functions.invoke('health-monitor', {
+        body: { action: 'check_all' }
+      });
+      if (error) throw error;
+      return data;
+    } catch (error) {
+      handleError(error);
+    }
+  },
+
+  async runHealthCheckDomain(domainId: string): Promise<any> {
+    try {
+      const { data, error } = await supabase.functions.invoke('health-monitor', {
+        body: { action: 'check_domain', domainId }
+      });
+      if (error) throw error;
+      return data;
+    } catch (error) {
+      handleError(error);
+    }
+  },
+
   // === AUTO-CONFIGURATION ===
   async autoConfigureDomain(domainId: string): Promise<AutoConfigurationResult> {
     try {

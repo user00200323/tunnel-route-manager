@@ -1,16 +1,19 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Plus, Globe, Server, Activity, TrendingUp } from "lucide-react";
+import { Plus, Globe, Server, Activity, TrendingUp, Zap } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { HealthPill } from "@/components/HealthPill";
-import type { Domain, VPS } from "@/types";
+import { AutoConfigurationDialog } from "@/components/AutoConfigurationDialog";
+import type { Domain, VPS, Tunnel } from "@/types";
 import { Api } from "@/services/api";
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const [showAutoConfig, setShowAutoConfig] = useState(false);
   
   const { data: domains = [], isLoading: domainsLoading } = useQuery({
     queryKey: ["domains"],
@@ -22,7 +25,12 @@ export default function Dashboard() {
     queryFn: () => Api.listVps(),
   });
 
-  const isLoading = domainsLoading || vpsLoading;
+  const { data: tunnels = [], isLoading: tunnelsLoading } = useQuery({
+    queryKey: ["tunnels"],
+    queryFn: () => Api.listTunnels(),
+  });
+
+  const isLoading = domainsLoading || vpsLoading || tunnelsLoading;
 
   const stats = {
     activeDomains: domains.filter(d => d.active).length,
@@ -145,6 +153,13 @@ export default function Dashboard() {
           <Plus className="h-4 w-4 mr-2" />
           Adicionar VPS
         </Button>
+        <Button 
+          onClick={() => setShowAutoConfig(true)} 
+          className="flex-1 max-w-xs bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70"
+        >
+          <Zap className="h-4 w-4 mr-2" />
+          Configurar Sistema
+        </Button>
       </div>
 
       {/* Recent Activity */}
@@ -186,6 +201,15 @@ export default function Dashboard() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Auto Configuration Dialog */}
+      <AutoConfigurationDialog
+        open={showAutoConfig}
+        onOpenChange={setShowAutoConfig}
+        domains={domains}
+        vpsServers={vpsList}
+        tunnels={tunnels}
+      />
     </div>
   );
 }

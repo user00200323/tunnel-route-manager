@@ -21,10 +21,19 @@ async function getCloudflareAccountId(): Promise<string> {
     },
   });
 
+  if (!response.ok) {
+    throw new Error(`Cloudflare API error: ${response.status} ${response.statusText}`);
+  }
+
   const data = await response.json();
+  console.log('Cloudflare accounts response:', JSON.stringify(data, null, 2));
   
-  if (!data.success || data.result.length === 0) {
-    throw new Error('No Cloudflare accounts found');
+  if (!data.success) {
+    throw new Error(`Cloudflare API error: ${JSON.stringify(data.errors)}`);
+  }
+  
+  if (!data.result || data.result.length === 0) {
+    throw new Error('No Cloudflare accounts found - check API token permissions');
   }
 
   return data.result[0].id;
@@ -33,21 +42,48 @@ async function getCloudflareAccountId(): Promise<string> {
 async function getZoneIdForDomain(hostname: string, accountId: string): Promise<string | null> {
   const domain = hostname.startsWith('www.') ? hostname.substring(4) : hostname;
   
-  const response = await fetch(`https://api.cloudflare.com/v4/zones?name=${domain}&account.id=${accountId}`, {
-    headers: {
-      'Authorization': `Bearer ${cloudflareToken}`,
-      'Content-Type': 'application/json',
-    },
-  });
-
-  const data = await response.json();
+  console.log(`Looking for Cloudflare zone for domain: ${domain}`);
   
-  if (!data.success || data.result.length === 0) {
-    console.log(`Zone not found for domain: ${domain}`);
-    return null;
-  }
+  // Try different API approaches
+  const urls = [
+    `https://api.cloudflare.com/v4/zones?name=${domain}`,
+    `https://api.cloudflare.com/v4/zones?name=${domain}&account.id=${accountId}`,
+    `https://api.cloudflare.com/v4/zones`
+  ];
+  
+  for (const url of urls) {
+    console.log(`Trying API URL: ${url}`);
+    
+    const response = await fetch(url, {
+      headers: {
+        'Authorization': `Bearer ${cloudflareToken}`,
+        'Content-Type': 'application/json',
+      },
+    });
 
-  return data.result[0].id;
+    if (!response.ok) {
+      console.log(`API call failed: ${response.status} ${response.statusText}`);
+      continue;
+    }
+
+    const data = await response.json();
+    console.log(`API response for ${url}:`, JSON.stringify(data, null, 2));
+    
+    if (!data.success) {
+      console.log(`API returned error: ${JSON.stringify(data.errors)}`);
+      continue;
+    }
+    
+    // Look for exact domain match
+    const zone = data.result.find((z: any) => z.name === domain);
+    if (zone) {
+      console.log(`Found zone for ${domain}: ${zone.id}`);
+      return zone.id;
+    }
+  }
+  
+  console.log(`Zone not found for domain: ${domain}`);
+  return null;
 }
 
 async function removeDnsRecords(hostname: string, zoneId: string): Promise<void> {

@@ -395,7 +395,16 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      get_domain_health_summary: {
+        Args: { domain_uuid: string }
+        Returns: {
+          avg_latency_24h: number
+          latest_check: string
+          latest_latency_ms: number
+          latest_status_code: number
+          uptime_percentage_24h: number
+        }[]
+      }
     }
     Enums: {
       deploy_status: "pending" | "running" | "success" | "failed"

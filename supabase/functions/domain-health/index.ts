@@ -54,7 +54,7 @@ serve(async (req) => {
       .from('domains')
       .select(`
         *,
-        tunnel:tunnels!inner(cf_tunnel_id),
+        tunnel:tunnels!inner(tunnel_id),
         vps:vps_servers(id, name, ssh_host)
       `)
       .eq('id', domainId);
@@ -77,7 +77,7 @@ serve(async (req) => {
     let details: Record<string, any> = {};
 
     // Only check DNS and tunnel if domain uses tunnel strategy
-    if (domain.publish_strategy === 'tunnel' && domain.tunnel?.cf_tunnel_id) {
+    if (domain.publish_strategy === 'tunnel' && domain.tunnel?.tunnel_id) {
       try {
         // Check DNS - verify CNAME record points to correct tunnel
         const dnsResponse = await fetch(
@@ -88,7 +88,7 @@ serve(async (req) => {
         if (dnsResponse.ok) {
           const dnsData = await dnsResponse.json();
           const record = dnsData.result?.[0];
-          const expectedContent = `${domain.tunnel.cf_tunnel_id}.cfargotunnel.com`;
+          const expectedContent = `${domain.tunnel.tunnel_id}.cfargotunnel.com`;
           
           if (record) {
             dnsOk = record.content?.toLowerCase() === expectedContent.toLowerCase() && record.proxied === true;
@@ -107,7 +107,7 @@ serve(async (req) => {
       try {
         // Check tunnel status - verify it has active connections
         const tunnelResponse = await fetch(
-          `${CF_API}/accounts/${Deno.env.get('CLOUDFLARE_ACCOUNT_ID')}/cfd_tunnel/${domain.tunnel.cf_tunnel_id}`,
+          `${CF_API}/accounts/${Deno.env.get('CLOUDFLARE_ACCOUNT_ID')}/cfd_tunnel/${domain.tunnel.tunnel_id}`,
           { headers: cfHeaders }
         );
 

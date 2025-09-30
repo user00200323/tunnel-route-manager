@@ -163,7 +163,7 @@ async function importTunnelsToDatabase(tunnels: CloudflareTunnel[]) {
   console.log(`Importing ${tunnels.length} tunnels to database...`);
   
   const tunnelData = tunnels.map(tunnel => ({
-    cf_tunnel_id: tunnel.id, // Use cf_tunnel_id for Cloudflare ID
+    tunnel_id: tunnel.id, // Now tunnel_id stores the Cloudflare ID
     name: tunnel.name,
     provider: 'cloudflared',
     status: determineTunnelStatus(tunnel),
@@ -178,10 +178,10 @@ async function importTunnelsToDatabase(tunnels: CloudflareTunnel[]) {
   const { data, error } = await supabase
     .from('tunnels')
     .upsert(tunnelData, { 
-      onConflict: 'cf_tunnel_id',
+      onConflict: 'tunnel_id',
       ignoreDuplicates: false 
     })
-    .select('id, name, cf_tunnel_id');
+    .select('id, name, tunnel_id');
 
   if (error) {
     console.error('Error importing tunnels:', error);
@@ -348,7 +348,7 @@ serve(async (req) => {
     const cfIdToDbId = new Map<string, string>();
     upsertedTunnels.forEach(t => {
       nameToDbId.set(t.name, t.id);
-      cfIdToDbId.set(t.cf_tunnel_id, t.id);
+      cfIdToDbId.set(t.tunnel_id, t.id); // tunnel_id now contains the CF ID
     });
     
     // 2) Liste ZONAS (só agora você pode usar 'zones')

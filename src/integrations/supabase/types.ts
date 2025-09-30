@@ -225,17 +225,17 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "domains_tunnel_id_fkey"
-            columns: ["tunnel_id"]
-            isOneToOne: false
-            referencedRelation: "tunnels"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "domains_vps_id_fkey"
             columns: ["vps_id"]
             isOneToOne: false
             referencedRelation: "vps_servers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fk_domains_tunnel_id"
+            columns: ["tunnel_id"]
+            isOneToOne: false
+            referencedRelation: "tunnels"
             referencedColumns: ["id"]
           },
         ]
@@ -315,7 +315,7 @@ export type Database = {
           name: string
           provider: string | null
           status: Database["public"]["Enums"]["tunnel_status"] | null
-          tunnel_id: string
+          tunnel_id: string | null
           updated_at: string | null
         }
         Insert: {
@@ -326,7 +326,7 @@ export type Database = {
           name: string
           provider?: string | null
           status?: Database["public"]["Enums"]["tunnel_status"] | null
-          tunnel_id: string
+          tunnel_id?: string | null
           updated_at?: string | null
         }
         Update: {
@@ -337,7 +337,7 @@ export type Database = {
           name?: string
           provider?: string | null
           status?: Database["public"]["Enums"]["tunnel_status"] | null
-          tunnel_id?: string
+          tunnel_id?: string | null
           updated_at?: string | null
         }
         Relationships: []

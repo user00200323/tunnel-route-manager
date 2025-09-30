@@ -344,6 +344,7 @@ export type Database = {
       }
       vps_servers: {
         Row: {
+          agent_url: string | null
           created_at: string | null
           health: Database["public"]["Enums"]["health_status"] | null
           id: string
@@ -360,6 +361,7 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
+          agent_url?: string | null
           created_at?: string | null
           health?: Database["public"]["Enums"]["health_status"] | null
           id?: string
@@ -376,6 +378,7 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
+          agent_url?: string | null
           created_at?: string | null
           health?: Database["public"]["Enums"]["health_status"] | null
           id?: string

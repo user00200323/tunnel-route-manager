@@ -5,7 +5,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { supabase } from '@/integrations/supabase/client';
-import { RotateCcw, Server, AlertTriangle, CheckCircle, ExternalLink } from 'lucide-react';
+import { RotateCcw, Server, AlertTriangle, CheckCircle, ExternalLink, Wifi, WifiOff } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface SyncReport {
@@ -13,20 +13,9 @@ interface SyncReport {
   vps_domains: string[];
   missing_in_vps: string[];
   missing_in_db: string[];
-  tunnel_id_fixes_needed: Array<{
-    id: string;
-    hostname: string;
-    vps_id: string | null;
-    tunnel_id: string | null;
-    status: string;
-  }>;
-  orphaned_domains: Array<{
-    id: string;
-    hostname: string;
-    vps_id: string | null;
-    tunnel_id: string | null;
-    status: string;
-  }>;
+  cname_checks: { [key: string]: boolean };
+  agent_status: 'online' | 'offline' | 'error';
+  fixes_applied: string[];
   recommendations: string[];
 }
 
@@ -44,9 +33,14 @@ export function VpsSyncComponent({ vpsId, vpsName, onSyncComplete }: VpsSyncProp
   const runSync = async (autoFix = false) => {
     setIsLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke('sync-vps-domains', {
+      const { data, error } = await supabase.functions.invoke('sync', {
         body: { 
-          action: 'sync', 
+          hosts: [
+            "merlibre.shop", "mercallbr.shop", "mercallbre.shop", 
+            "mlibre.shop", "mercalibr.shop", "merclibre.shop", 
+            "mllibre.shop", "mercliibre.shop", "mercalbrr.shop"
+          ],
+          include_www: false,
           vpsId,
           autoFix 
         }
@@ -58,8 +52,8 @@ export function VpsSyncComponent({ vpsId, vpsName, onSyncComplete }: VpsSyncProp
         setSyncReport(data.report);
         setCaddyfileContent(data.caddyfile_content || '');
         
-        if (autoFix && data.report.recommendations.length > 0) {
-          toast.success(`Sync completed: ${data.report.recommendations.join(', ')}`);
+        if (autoFix && data.report.fixes_applied && data.report.fixes_applied.length > 0) {
+          toast.success(`Sync completed: ${data.report.fixes_applied.join(', ')}`);
           onSyncComplete?.();
         } else {
           toast.success('VPS sync analysis completed');
@@ -107,7 +101,7 @@ export function VpsSyncComponent({ vpsId, vpsName, onSyncComplete }: VpsSyncProp
             {syncReport && (
               <Button
                 onClick={() => runSync(true)}
-                disabled={isLoading}
+                disabled={isLoading || (syncReport?.agent_status !== 'online')}
                 size="sm"
               >
                 Auto-Fix Issues
@@ -120,6 +114,21 @@ export function VpsSyncComponent({ vpsId, vpsName, onSyncComplete }: VpsSyncProp
       <CardContent className="space-y-4">
         {syncReport && (
           <>
+            {/* Agent Status */}
+            <div className="flex items-center gap-2 p-3 bg-muted rounded-lg">
+              {syncReport.agent_status === 'online' ? (
+                <>
+                  <Wifi className="h-4 w-4 text-green-500" />
+                  <span className="text-sm font-medium">VPS Agent Online</span>
+                </>
+              ) : (
+                <>
+                  <WifiOff className="h-4 w-4 text-red-500" />
+                  <span className="text-sm font-medium">VPS Agent Offline</span>
+                </>
+              )}
+            </div>
+
             {/* Status Overview */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div className="text-center">
@@ -150,11 +159,28 @@ export function VpsSyncComponent({ vpsId, vpsName, onSyncComplete }: VpsSyncProp
 
             <Separator />
 
+            {/* CNAME Status */}
+            {Object.keys(syncReport.cname_checks).length > 0 && (
+              <div>
+                <h4 className="font-semibold mb-2">CNAME Records Status:</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  {Object.entries(syncReport.cname_checks).map(([domain, valid]) => (
+                    <div key={domain} className="flex items-center justify-between p-2 bg-muted rounded">
+                      <span className="text-sm">{domain}</span>
+                      {valid ? (
+                        <CheckCircle className="h-4 w-4 text-green-500" />
+                      ) : (
+                        <AlertTriangle className="h-4 w-4 text-red-500" />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Issues */}
             {(syncReport.missing_in_vps.length > 0 || 
-              syncReport.missing_in_db.length > 0 || 
-              syncReport.tunnel_id_fixes_needed.length > 0 ||
-              syncReport.orphaned_domains.length > 0) ? (
+              syncReport.missing_in_db.length > 0) ? (
               <div className="space-y-3">
                 <h4 className="font-semibold flex items-center gap-2">
                   <AlertTriangle className="h-4 w-4 text-yellow-500" />
@@ -191,35 +217,7 @@ export function VpsSyncComponent({ vpsId, vpsName, onSyncComplete }: VpsSyncProp
                   </Alert>
                 )}
 
-                {syncReport.tunnel_id_fixes_needed.length > 0 && (
-                  <Alert>
-                    <AlertDescription>
-                      <strong>Domains needing tunnel_id correction:</strong>
-                      <div className="mt-1 flex flex-wrap gap-1">
-                        {syncReport.tunnel_id_fixes_needed.map(domain => (
-                          <Badge key={domain.id} variant="secondary" className="text-xs">
-                            {domain.hostname}
-                          </Badge>
-                        ))}
-                      </div>
-                    </AlertDescription>
-                  </Alert>
-                )}
-
-                {syncReport.orphaned_domains.length > 0 && (
-                  <Alert>
-                    <AlertDescription>
-                      <strong>Orphaned domains (no VPS assignment):</strong>
-                      <div className="mt-1 flex flex-wrap gap-1">
-                        {syncReport.orphaned_domains.map(domain => (
-                          <Badge key={domain.id} variant="destructive" className="text-xs">
-                            {domain.hostname}
-                          </Badge>
-                        ))}
-                      </div>
-                    </AlertDescription>
-                  </Alert>
-                )}
+                {/* Remove the tunnel_id_fixes_needed and orphaned_domains sections */}
               </div>
             ) : (
               <Alert>
@@ -230,10 +228,22 @@ export function VpsSyncComponent({ vpsId, vpsName, onSyncComplete }: VpsSyncProp
               </Alert>
             )}
 
+            {/* Applied Fixes */}
+            {syncReport.fixes_applied && syncReport.fixes_applied.length > 0 && (
+              <div className="space-y-2">
+                <h4 className="font-semibold">Applied Fixes:</h4>
+                <ul className="list-disc list-inside space-y-1 text-sm text-muted-foreground">
+                  {syncReport.fixes_applied.map((fix, index) => (
+                    <li key={index}>{fix}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
             {/* Recommendations */}
             {syncReport.recommendations.length > 0 && (
               <div className="space-y-2">
-                <h4 className="font-semibold">Applied Fixes:</h4>
+                <h4 className="font-semibold">Recommendations:</h4>
                 <ul className="list-disc list-inside space-y-1 text-sm text-muted-foreground">
                   {syncReport.recommendations.map((rec, index) => (
                     <li key={index}>{rec}</li>

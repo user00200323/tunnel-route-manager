@@ -25,6 +25,7 @@ interface DomainHealth {
   dnsOk: boolean;
   tunnelOk?: boolean;
   agentOk?: boolean;
+  cnameOk?: boolean;
   details?: Record<string, any>;
 }
 
@@ -49,13 +50,12 @@ serve(async (req) => {
       return jsonResponse({ error: "Missing domain id parameter" }, 400);
     }
 
-    // Fetch domain with related tunnel and VPS data
+    // Fetch domain with related tunnel data
     const { data: domains, error: domainError } = await supabase
       .from('domains')
       .select(`
         *,
-        tunnel:tunnels!inner(tunnel_id),
-        vps:vps_servers(id, name, ssh_host)
+        tunnel:tunnels(tunnel_id, cf_tunnel_id)
       `)
       .eq('id', domainId);
 
@@ -74,65 +74,84 @@ serve(async (req) => {
     let dnsOk = false;
     let tunnelOk = false;
     let agentOk = false;
+    let cnameOk = false;
     let details: Record<string, any> = {};
 
     // Only check DNS and tunnel if domain uses tunnel strategy
-    if (domain.publish_strategy === 'tunnel' && domain.tunnel?.tunnel_id) {
-      try {
-        // Check DNS - verify CNAME record points to correct tunnel
-        const dnsResponse = await fetch(
-          `${CF_API}/zones/${domain.hostname.split('.').slice(-2).join('.')}/dns_records?type=CNAME&name=${domain.hostname}`,
-          { headers: cfHeaders }
-        );
+    if (domain.publish_strategy === 'tunnel' && domain.tunnel_id) {
+      // Get tunnel details
+      const { data: tunnelData } = await supabase
+        .from('tunnels')
+        .select('cf_tunnel_id')
+        .eq('tunnel_id', domain.tunnel_id)
+        .single();
 
-        if (dnsResponse.ok) {
-          const dnsData = await dnsResponse.json();
-          const record = dnsData.result?.[0];
-          const expectedContent = `${domain.tunnel.tunnel_id}.cfargotunnel.com`;
+      if (tunnelData?.cf_tunnel_id) {
+        try {
+          // Check CNAME record via Google DNS
+          const expectedContent = `${tunnelData.cf_tunnel_id}.cfargotunnel.com`;
+          const cnameResponse = await fetch(`https://dns.google/resolve?name=${domain.hostname}&type=CNAME`);
+          const cnameData = await cnameResponse.json();
           
-          if (record) {
-            dnsOk = record.content?.toLowerCase() === expectedContent.toLowerCase() && record.proxied === true;
-            details.dnsRecord = {
-              content: record.content,
-              expected: expectedContent,
-              proxied: record.proxied
-            };
+          if (cnameData.Answer) {
+            cnameOk = cnameData.Answer.some((answer: any) => 
+              answer.data && answer.data.includes(tunnelData.cf_tunnel_id)
+            );
           }
+          
+          details.expectedCname = expectedContent;
+          details.cnameFound = cnameData.Answer?.[0]?.data || 'None';
+          
+          // For now, consider DNS OK if CNAME is correct
+          dnsOk = cnameOk;
+        } catch (error) {
+          console.error('DNS check failed:', error);
+          details.dnsError = error instanceof Error ? error.message : 'Unknown DNS error';
         }
-      } catch (error) {
-        console.error('DNS check failed:', error);
-        details.dnsError = error instanceof Error ? error.message : 'Unknown DNS error';
-      }
 
-      try {
-        // Check tunnel status - verify it has active connections
-        const tunnelResponse = await fetch(
-          `${CF_API}/accounts/${Deno.env.get('CLOUDFLARE_ACCOUNT_ID')}/cfd_tunnel/${domain.tunnel.tunnel_id}`,
-          { headers: cfHeaders }
-        );
+        try {
+          // Check tunnel status - verify it has active connections
+          const tunnelResponse = await fetch(
+            `${CF_API}/accounts/${Deno.env.get('CLOUDFLARE_ACCOUNT_ID')}/cfd_tunnel/${tunnelData.cf_tunnel_id}/connections`,
+            { headers: cfHeaders }
+          );
 
-        if (tunnelResponse.ok) {
-          const tunnelData = await tunnelResponse.json();
-          const connections = tunnelData.result?.connections || [];
-          tunnelOk = Array.isArray(connections) && connections.length > 0;
-          details.tunnelConnections = connections.length;
+          if (tunnelResponse.ok) {
+            const tunnelConnData = await tunnelResponse.json();
+            const connections = tunnelConnData.result || [];
+            tunnelOk = Array.isArray(connections) && connections.length > 0;
+            details.tunnelConnections = connections.length;
+          }
+        } catch (error) {
+          console.error('Tunnel check failed:', error);
+          details.tunnelError = error instanceof Error ? error.message : 'Unknown tunnel error';
         }
-      } catch (error) {
-        console.error('Tunnel check failed:', error);
-        details.tunnelError = error instanceof Error ? error.message : 'Unknown tunnel error';
       }
     }
 
     // Check VPS agent if VPS is assigned
-    if (domain.vps?.ssh_host) {
+    if (domain.vps_id) {
       try {
-        const agentUrl = `http://${domain.vps.ssh_host}:8080/status`;
-        const agentResponse = await fetch(agentUrl, {
-          headers: { Authorization: `Bearer ${AGENT_CALL_TOKEN}` },
-          signal: AbortSignal.timeout(5000) // 5 second timeout
-        });
-        agentOk = agentResponse.ok;
-        details.agentStatus = agentResponse.status;
+        // Get VPS details with agent_url
+        const { data: vpsData, error: vpsError } = await supabase
+          .from('vps_servers')
+          .select('ipv4, agent_url')
+          .eq('id', domain.vps_id)
+          .single();
+
+        if (vpsData && !vpsError) {
+          const agentUrl = vpsData.agent_url || `http://${vpsData.ipv4}:8888`;
+          const agentResponse = await fetch(`${agentUrl}/health`, {
+            headers: { 
+              'Authorization': 'Bearer 3db4fe2fb1d43942ae895f927efef38d2bbc19aec275c2138cb1765a692c3cd5',
+              'Content-Type': 'application/json'
+            },
+            signal: AbortSignal.timeout(5000) // 5 second timeout
+          });
+          agentOk = agentResponse.ok;
+          details.agentStatus = agentResponse.status;
+          details.agentUrl = agentUrl;
+        }
       } catch (error) {
         console.error('Agent check failed:', error);
         details.agentError = error instanceof Error ? error.message : 'Unknown agent error';
@@ -149,7 +168,8 @@ serve(async (req) => {
     const healthResult: DomainHealth = {
       dnsOk,
       tunnelOk: domain.publish_strategy === 'tunnel' ? tunnelOk : undefined,
-      agentOk: domain.vps ? agentOk : undefined,
+      agentOk: domain.vps_id ? agentOk : undefined,
+      cnameOk: domain.publish_strategy === 'tunnel' ? cnameOk : undefined,
       details
     };
 

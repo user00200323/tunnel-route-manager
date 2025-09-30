@@ -75,11 +75,8 @@ Deno.serve(async (req) => {
 
       const dnsResponse = await supabase.functions.invoke('cloudflare-dns', {
         body: {
-          action: 'create_records',
           domainId: domain.id,
-          hostname: domain.hostname,
-          strategy: domain.publish_strategy,
-          ipv4: domain.vps_servers?.ipv4
+          action: 'create'
         }
       });
 

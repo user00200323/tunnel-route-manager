@@ -27,6 +27,10 @@ interface CloudflareDNSRecord {
   ttl: number;
 }
 
+// Zone ID cache to avoid repeated API calls
+const zoneCache = new Map<string, { id: string; timestamp: number }>();
+const CACHE_TTL = 300000; // 5 minutes
+
 async function getZoneId(domain: string): Promise<string> {
   console.log(`Getting zone ID for domain: ${domain}`);
   
@@ -34,8 +38,14 @@ async function getZoneId(domain: string): Promise<string> {
   const parts = domain.split('.');
   const rootDomain = parts.slice(-2).join('.');
   
+  // Check cache first
+  const cached = zoneCache.get(rootDomain);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    console.log(`Using cached zone ID for ${rootDomain}: ${cached.id}`);
+    return cached.id;
+  }
+  
   console.log(`Extracted root domain: ${rootDomain} from original domain: ${domain}`);
-  console.log(`Domain parts: ${JSON.stringify(parts)}`);
   
   const apiUrl = `https://api.cloudflare.com/v4/zones?name=${rootDomain}`;
   console.log(`Making API request to: ${apiUrl}`);
@@ -69,8 +79,13 @@ async function getZoneId(domain: string): Promise<string> {
     throw new Error(`Zone not found for domain: ${rootDomain}. No zones match this domain in your Cloudflare account.`);
   }
 
-  console.log(`Found zone: ${data.result[0].name} with ID: ${data.result[0].id}`);
-  return data.result[0].id;
+  const zoneId = data.result[0].id;
+  console.log(`Found zone: ${data.result[0].name} with ID: ${zoneId}`);
+  
+  // Cache the result
+  zoneCache.set(rootDomain, { id: zoneId, timestamp: Date.now() });
+  
+  return zoneId;
 }
 
 async function createOrUpdateDNSRecord(
@@ -199,72 +214,44 @@ serve(async (req) => {
     const records = [];
 
     if (action === 'create' || action === 'update') {
+      const dnsOperations: Promise<CloudflareDNSRecord>[] = [];
+
       if (domain.publish_strategy === 'dns' && domain.vps_servers) {
         const vps = domain.vps_servers;
         
-        // Create A record for apex domain
+        // Batch DNS operations for better performance
         if (vps.ipv4) {
-          const aRecord = await createOrUpdateDNSRecord(
-            zoneId,
-            'A',
-            domain.hostname,
-            vps.ipv4,
-            true
-          );
-          records.push(aRecord);
-          await saveDNSRecord(domainId, aRecord);
+          dnsOperations.push(createOrUpdateDNSRecord(zoneId, 'A', domain.hostname, vps.ipv4, true));
         }
 
-        // Create AAAA record if IPv6 available
         if (vps.ipv6) {
-          const aaaaRecord = await createOrUpdateDNSRecord(
-            zoneId,
-            'AAAA',
-            domain.hostname,
-            vps.ipv6,
-            true
-          );
-          records.push(aaaaRecord);
-          await saveDNSRecord(domainId, aaaaRecord);
+          dnsOperations.push(createOrUpdateDNSRecord(zoneId, 'AAAA', domain.hostname, vps.ipv6, true));
         }
 
-        // Create www CNAME if www_alias is enabled
         if (domain.www_alias) {
-          const cnameRecord = await createOrUpdateDNSRecord(
-            zoneId,
-            'CNAME',
-            `www.${domain.hostname}`,
-            domain.hostname,
-            true
-          );
-          records.push(cnameRecord);
-          await saveDNSRecord(domainId, cnameRecord);
+          dnsOperations.push(createOrUpdateDNSRecord(zoneId, 'CNAME', `www.${domain.hostname}`, domain.hostname, true));
         }
       } else if (domain.publish_strategy === 'tunnel' && domain.tunnel_id) {
-        // For tunnel strategy, create CNAME to tunnel hostname
         const tunnelHostname = `${domain.tunnel_id}.cfargotunnel.com`;
         
-        const cnameRecord = await createOrUpdateDNSRecord(
-          zoneId,
-          'CNAME',
-          domain.hostname,
-          tunnelHostname,
-          true
-        );
-        records.push(cnameRecord);
-        await saveDNSRecord(domainId, cnameRecord);
+        dnsOperations.push(createOrUpdateDNSRecord(zoneId, 'CNAME', domain.hostname, tunnelHostname, true));
 
-        // Create www CNAME if www_alias is enabled
         if (domain.www_alias) {
-          const wwwCnameRecord = await createOrUpdateDNSRecord(
-            zoneId,
-            'CNAME',
-            `www.${domain.hostname}`,
-            domain.hostname,
-            true
-          );
-          records.push(wwwCnameRecord);
-          await saveDNSRecord(domainId, wwwCnameRecord);
+          dnsOperations.push(createOrUpdateDNSRecord(zoneId, 'CNAME', `www.${domain.hostname}`, domain.hostname, true));
+        }
+      }
+
+      // Execute all DNS operations in parallel
+      const dnsResults = await Promise.allSettled(dnsOperations);
+      
+      // Process results and save to database
+      for (const result of dnsResults) {
+        if (result.status === 'fulfilled') {
+          records.push(result.value);
+          await saveDNSRecord(domainId, result.value);
+        } else {
+          console.error('DNS operation failed:', result.reason);
+          throw new Error(`DNS operation failed: ${result.reason.message}`);
         }
       }
 

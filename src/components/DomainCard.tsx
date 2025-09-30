@@ -1,6 +1,5 @@
 import { useState, useMemo } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import useSWR from 'swr';
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -32,6 +31,7 @@ import { SwitchVpsDialog } from "./SwitchVpsDialog";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { toast } from "sonner";
 import type { Domain, VPS } from "@/types";
+import { useDomainHealth } from "@/hooks/useDomainHealth";
 
 interface DomainHealth {
   dnsOk: boolean;
@@ -39,8 +39,6 @@ interface DomainHealth {
   agentOk?: boolean;
   details?: Record<string, any>;
 }
-
-const fetcher = (url: string) => fetch(url).then(res => res.json());
 
 interface DomainCardProps {
   domain: Domain;
@@ -54,16 +52,8 @@ export function DomainCard({ domain, vps, onSwitchVps }: DomainCardProps) {
   const [showTunnelDialog, setShowTunnelDialog] = useState(false);
   const [showResetDialog, setShowResetDialog] = useState(false);
 
-  // Health check hook with real-time updates
-  const { data: health, isLoading: healthLoading } = useSWR<DomainHealth>(
-    `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/domain-health?id=${domain.id}`,
-    fetcher, 
-    { 
-      refreshInterval: 15000, // 15s for "real-time" updates
-      errorRetryCount: 2,
-      errorRetryInterval: 5000
-    }
-  );
+  // Use optimized health check hook
+  const { health, isLoading: healthLoading, error: healthError } = useDomainHealth(domain.id, domain.status);
 
   const autoConfigureMutation = useMutation({
     mutationFn: (domainId: string) => Api.autoConfigureDomain(domainId),

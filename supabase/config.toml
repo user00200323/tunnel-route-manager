@@ -30,3 +30,6 @@ verify_jwt = false
 
 [functions.cloudflare-import]
 verify_jwt = false
+
+[functions.domain-health]
+verify_jwt = false

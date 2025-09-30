@@ -186,11 +186,23 @@ export default function VpsPage() {
                   label="Tunnel ID"
                 />
                 
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">Domínios:</span>
-                  <Badge variant="outline">
-                    {(vps as any).domainCount}
-                  </Badge>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">Domínios:</span>
+                    <Badge variant="outline">
+                      {(vps as any).domainCount}
+                    </Badge>
+                  </div>
+                  {domains.filter(d => d.vps_id === vps.id).slice(0, 2).map((domain) => (
+                    <div key={domain.id} className="text-xs text-muted-foreground truncate">
+                      {domain.hostname}
+                    </div>
+                  ))}
+                  {domains.filter(d => d.vps_id === vps.id).length > 2 && (
+                    <div className="text-xs text-muted-foreground">
+                      +{domains.filter(d => d.vps_id === vps.id).length - 2} mais...
+                    </div>
+                  )}
                 </div>
                 
                 {vps.last_seen_at && (

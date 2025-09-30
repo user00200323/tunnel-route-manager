@@ -32,6 +32,7 @@ import { ConfirmDialog } from "./ConfirmDialog";
 import { toast } from "sonner";
 import type { Domain, VPS } from "@/types";
 import { useDomainHealth } from "@/hooks/useDomainHealth";
+import { CloudflareStatusIndicator } from "./CloudflareStatusIndicator";
 
 interface DomainHealth {
   dnsOk: boolean;
@@ -223,9 +224,7 @@ export function DomainCard({ domain, vps, onSwitchVps }: DomainCardProps) {
                 <Shield className="h-4 w-4 text-muted-foreground" />
                 <span className="text-sm text-muted-foreground">Cloudflare:</span>
               </div>
-              <Badge variant={cloudflareStatus.variant}>
-                {cloudflareStatus.label}
-              </Badge>
+              <CloudflareStatusIndicator domain={domain} />
             </div>
 
             {/* Configuration Status */}

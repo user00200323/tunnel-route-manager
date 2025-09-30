@@ -34,6 +34,7 @@ export type VPS = {
 export type Domain = {
   id: string;
   hostname: string;
+  fqdn?: string;
   tenant_id: string;
   type: 'apex' | 'www' | 'custom';
   publish_strategy: 'dns' | 'tunnel';

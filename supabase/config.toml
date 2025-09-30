@@ -33,3 +33,6 @@ verify_jwt = false
 
 [functions.domain-health]
 verify_jwt = false
+
+[functions.cloudflare-nameservers]
+verify_jwt = false

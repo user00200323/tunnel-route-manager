@@ -201,7 +201,8 @@ serve(async (req) => {
       .from('domains')
       .select(`
         *,
-        vps_servers!vps_id (*)
+        vps_servers!vps_id (*),
+        tunnels!tunnel_id (*)
       `)
       .eq('id', domainId)
       .single();
@@ -231,10 +232,22 @@ serve(async (req) => {
         if (domain.www_alias) {
           dnsOperations.push(createOrUpdateDNSRecord(zoneId, 'CNAME', `www.${domain.hostname}`, domain.hostname, true));
         }
-      } else if (domain.publish_strategy === 'tunnel' && domain.tunnel_id) {
-        const tunnelHostname = `${domain.tunnel_id}.cfargotunnel.com`;
+      } else if (domain.publish_strategy === 'tunnel') {
+        let tunnelCloudflareId = null;
         
-        dnsOperations.push(createOrUpdateDNSRecord(zoneId, 'CNAME', domain.hostname, tunnelHostname, true));
+        // Get tunnel ID from domain's tunnel relation or VPS
+        if (domain.tunnels?.tunnel_id) {
+          tunnelCloudflareId = domain.tunnels.tunnel_id;
+        } else if (domain.vps_servers?.tunnel_id) {
+          tunnelCloudflareId = domain.vps_servers.tunnel_id;
+        }
+        
+        if (tunnelCloudflareId) {
+          const tunnelHostname = `${tunnelCloudflareId}.cfargotunnel.com`;
+          dnsOperations.push(createOrUpdateDNSRecord(zoneId, 'CNAME', domain.hostname, tunnelHostname, true));
+        } else {
+          console.warn(`No tunnel ID found for domain ${domain.hostname} with tunnel strategy`);
+        }
 
         if (domain.www_alias) {
           dnsOperations.push(createOrUpdateDNSRecord(zoneId, 'CNAME', `www.${domain.hostname}`, domain.hostname, true));

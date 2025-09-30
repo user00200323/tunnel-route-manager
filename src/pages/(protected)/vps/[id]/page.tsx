@@ -29,8 +29,8 @@ export default function VpsDetailPage() {
   });
 
   const { data: domains = [] } = useQuery({
-    queryKey: ['domains', { vpsId: id }],
-    queryFn: () => Api.listDomains({ search: id })
+    queryKey: ['domains'],
+    queryFn: () => Api.listDomains()
   });
 
   const runHealthCheckMutation = useMutation({
@@ -296,13 +296,19 @@ export default function VpsDetailPage() {
                   <div key={domain.id} className="flex items-center justify-between p-4 border rounded-lg">
                     <div className="flex items-center gap-4">
                       <Globe className="h-8 w-8 text-muted-foreground" />
-                      <div>
-                        <h4 className="font-medium">{domain.hostname}</h4>
-                        <div className="flex items-center gap-2 mt-1">
-                          <Badge variant="outline">{domain.status}</Badge>
-                          <Badge variant="outline">{domain.type}</Badge>
+                        <div>
+                          <h4 className="font-medium">{domain.hostname}</h4>
+                          <div className="flex items-center gap-2 mt-1">
+                            <Badge variant="outline">{domain.status}</Badge>
+                            <Badge variant="outline">{domain.publish_strategy}</Badge>
+                            {domain.tunnel_id && (
+                              <Badge variant="secondary" className="text-xs">Tunnel</Badge>
+                            )}
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            FQDN: {domain.fqdn || domain.hostname}
+                          </p>
                         </div>
-                      </div>
                     </div>
                     <Button variant="outline" size="sm">
                       Ver Detalhes

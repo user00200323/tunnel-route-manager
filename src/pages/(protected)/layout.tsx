@@ -53,19 +53,13 @@ export default function ProtectedLayout() {
 
   const navigation = [
     { name: "Dashboard", href: "/", icon: BarChart3 },
-    { name: "Tenants", href: "/tenants", icon: Users },
     { name: "Domínios", href: "/domains", icon: Globe },
     { name: "VPS", href: "/vps", icon: Server },
-    { name: "Configurações", href: "/settings", icon: Settings },
   ];
 
   const getBreadcrumb = () => {
     const path = location.pathname;
     if (path === "/") return "Dashboard";
-    if (path.startsWith("/tenants")) {
-      if (path === "/tenants") return "Tenants";
-      return "Detalhes do Tenant";
-    }
     if (path.startsWith("/domains")) {
       if (path === "/domains") return "Domínios";
       if (path === "/domains/new") return "Novo Domínio";
@@ -76,7 +70,6 @@ export default function ProtectedLayout() {
       if (path === "/vps/new") return "Nova VPS";
       return "Detalhes da VPS";
     }
-    if (path === "/settings") return "Configurações";
     return "";
   };
 

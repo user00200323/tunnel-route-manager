@@ -281,15 +281,6 @@ export default function DomainsPage() {
         </div>
         <div className="flex gap-2 flex-wrap">
           <Button 
-            variant="outline" 
-            onClick={() => importMutation.mutate()}
-            disabled={importMutation.isPending}
-            className="hover-scale"
-          >
-            <Download className="h-4 w-4 mr-2" />
-            {importMutation.isPending ? "Importando..." : "Importar Cloudflare"}
-          </Button>
-          <Button 
             onClick={() => navigate("/domains/new")}
             className="hover-scale bg-gradient-primary"
           >
@@ -299,19 +290,10 @@ export default function DomainsPage() {
         </div>
       </div>
 
-      {/* Health Overview Dashboard */}
+      {/* Health Overview - Simplified */}
       <Card className="shadow-card border-primary/10">
         <CardContent className="p-6">
-          <div className="mb-4">
-            <div className="flex items-center justify-between">
-              <h3 className="font-semibold text-lg">Status Geral dos Domínios</h3>
-              <Badge variant={healthPercentage >= 80 ? "default" : healthPercentage >= 60 ? "secondary" : "destructive"}>
-                {healthPercentage}% saudáveis
-              </Badge>
-            </div>
-          </div>
-          
-          <div className="grid gap-4 md:grid-cols-5">
+          <div className="grid gap-4 md:grid-cols-4">
             <div className="flex items-center gap-3 p-3 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800">
               <div className="p-2 bg-emerald-100 rounded-lg dark:bg-emerald-900/40">
                 <Radio className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
@@ -332,18 +314,6 @@ export default function DomainsPage() {
                 <p className="text-sm font-medium text-amber-700 dark:text-amber-300">Problemas</p>
                 <p className="text-2xl font-bold text-amber-600 dark:text-amber-400">
                   {metrics.withProblems}
-                </p>
-              </div>
-            </div>
-            
-            <div className="flex items-center gap-3 p-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
-              <div className="p-2 bg-blue-100 rounded-lg dark:bg-blue-900/40">
-                <Shield className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-              </div>
-              <div>
-                <p className="text-sm font-medium text-blue-700 dark:text-blue-300">Cloudflare</p>
-                <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">
-                  {metrics.viaCloudflare}
                 </p>
               </div>
             </div>
@@ -375,43 +345,20 @@ export default function DomainsPage() {
         </CardContent>
       </Card>
 
-      {/* Compact Smart Filters */}
+      {/* Simplified Search */}
       <Card className="shadow-card">
         <CardContent className="p-4">
-          <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
-            {/* Search */}
-            <div className="relative flex-1 min-w-0">
+          <div className="flex gap-3">
+            <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Buscar por hostname..."
+                placeholder="Buscar domínio..."
                 value={filters.query}
                 onChange={(e) => setFilters({ ...filters, query: e.target.value })}
                 className="pl-10"
               />
             </div>
             
-            {/* VPS Filter */}
-            <Select 
-              value={filters.vpsId || "all"} 
-              onValueChange={(value) => setFilters({ 
-                ...filters, 
-                vpsId: value === "all" ? "" : value 
-              })}
-            >
-              <SelectTrigger className="w-full sm:w-48">
-                <SelectValue placeholder="Filtrar por VPS" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todas as VPS</SelectItem>
-                {vpsList.map((vps: any) => (
-                  <SelectItem key={vps.id} value={vps.id}>
-                    {vps.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            {/* Status Filter */}
             <Select 
               value={filters.active?.toString() || "all"} 
               onValueChange={(value) => setFilters({ 
@@ -419,7 +366,7 @@ export default function DomainsPage() {
                 active: value === "all" ? undefined : value === "true" 
               })}
             >
-              <SelectTrigger className="w-full sm:w-48">
+              <SelectTrigger className="w-[140px]">
                 <SelectValue placeholder="Status" />
               </SelectTrigger>
               <SelectContent>
@@ -428,43 +375,6 @@ export default function DomainsPage() {
                 <SelectItem value="false">Inativos</SelectItem>
               </SelectContent>
             </Select>
-
-            {/* Tunnel Filter */}
-            <div className="flex items-center space-x-2">
-              <Checkbox
-                id="onlyTunnels"
-                checked={filters.onlyTunnels}
-                onCheckedChange={(checked) => 
-                  setFilters({ ...filters, onlyTunnels: !!checked })
-                }
-              />
-              <label 
-                htmlFor="onlyTunnels" 
-                className="text-sm font-medium leading-none cursor-pointer"
-              >
-                Só tunnels
-              </label>
-            </div>
-
-            {/* View Mode Toggle */}
-            <div className="flex border rounded-lg p-1">
-              <Button
-                variant={viewMode === 'grid' ? 'default' : 'ghost'}
-                size="sm"
-                onClick={() => setViewMode('grid')}
-                className="h-8 px-3"
-              >
-                <LayoutGrid className="h-4 w-4" />
-              </Button>
-              <Button
-                variant={viewMode === 'list' ? 'default' : 'ghost'}
-                size="sm"
-                onClick={() => setViewMode('list')}
-                className="h-8 px-3"
-              >
-                <List className="h-4 w-4" />
-              </Button>
-            </div>
           </div>
         </CardContent>
       </Card>
@@ -509,22 +419,12 @@ export default function DomainsPage() {
             ? "grid gap-4 md:grid-cols-2 lg:grid-cols-3" 
             : "space-y-4"
           }>
-            {filteredDomains.map((domain: Domain) => {
-              const vps = getVpsForDomain(domain.vps_id || null);
-              
-              return (
-                <DomainCard
-                  key={domain.id}
-                  domain={domain}
-                  vps={vps}
-                  onSwitchVps={(domain, vps) => setSwitchDialog({ 
-                    open: true, 
-                    domain, 
-                    currentVps: vps 
-                  })}
-                />
-              );
-            })}
+            {filteredDomains.map((domain: Domain) => (
+              <DomainCard
+                key={domain.id}
+                domain={domain}
+              />
+            ))}
           </div>
         )}
       </div>

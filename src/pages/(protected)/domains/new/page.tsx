@@ -1,337 +1,248 @@
-import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { z } from "zod";
+import { ArrowLeft, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { ArrowLeft, X, Globe, Server, Info } from "lucide-react";
 import { toast } from "sonner";
-import { Api } from "@/services/api";
 import { supabase } from "@/integrations/supabase/client";
-import { domainSchema } from "@/schemas";
-import type { z } from "zod";
 
-type DomainFormData = z.infer<typeof domainSchema>;
+const formSchema = z.object({
+  hostname: z.string().min(3, "Hostname deve ter pelo menos 3 caracteres"),
+  tunnel_id: z.string().min(1, "Selecione um tunnel"),
+  service_url: z.string().url("URL inválida").or(z.string().regex(/^http:\/\/localhost:\d+$/, "URL inválida")),
+  active: z.boolean().default(true),
+});
+
+type FormValues = z.infer<typeof formSchema>;
 
 export default function DomainsNewPage() {
   const navigate = useNavigate();
-  const [publishStrategy, setPublishStrategy] = useState<'dns' | 'tunnel'>('dns');
+  const queryClient = useQueryClient();
 
-  // Fetch VPS list for the select dropdown
-  const { data: vpsData = [] } = useQuery({
-    queryKey: ['vps'],
-    queryFn: () => Api.listVps()
-  });
-
-  const { data: tenants = [] } = useQuery({
-    queryKey: ['tenants'],
-    queryFn: () => Api.listTenants()
-  });
-
-  const form = useForm<DomainFormData>({
-    resolver: zodResolver(domainSchema),
+  const form = useForm<FormValues>({
+    resolver: zodResolver(formSchema),
     defaultValues: {
       hostname: "",
-      type: "apex",
+      tunnel_id: "",
+      service_url: "http://localhost:3000",
       active: true,
     },
   });
 
-  const createDomainMutation = useMutation({
-    mutationFn: async (data: DomainFormData) => {
-      // Map form data to API format
-      const apiData = {
-        hostname: data.hostname,
-        tenant_id: tenants[0]?.id || '', // Use first tenant or handle properly
-        type: data.type,
-        publish_strategy: publishStrategy,
-        vps_id: publishStrategy === 'dns' ? data.vpsId : undefined,
-        tunnel_id: publishStrategy === 'tunnel' ? data.tunnelId : undefined,
-        active: data.active,
-        status: 'pending' as const,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
-      
-      // Create the domain
-      const domain = await Api.createDomain(apiData);
-      
-      // If DNS strategy, configure Cloudflare DNS and update VPS Caddyfile
-      if (publishStrategy === 'dns' && data.vpsId) {
-        try {
-          // Call cloudflare-dns function to setup DNS records
-          await supabase.functions.invoke('cloudflare-dns', {
-            body: {
-              action: 'create_records',
-              domain: data.hostname,
-              vpsId: data.vpsId
-            }
-          });
-          
-          // Update VPS Caddyfile to include the new domain
-          await Api.updateVpsCaddyfile(data.vpsId);
-          
-          toast.success("DNS configurado e Caddy atualizado!");
-        } catch (error) {
-          console.error('Error configuring DNS/VPS:', error);
-          toast.warning("Domínio criado, mas houve erro na configuração automática");
-        }
-      }
-      
-      return domain;
-    },
-    onSuccess: (domain) => {
-      toast.success("Domínio criado e configurado com sucesso!");
-      navigate(`/domains/${domain.id}`);
-    },
-    onError: (error) => {
-      toast.error("Erro ao criar domínio: " + error.message);
+  const { data: tunnels = [] } = useQuery({
+    queryKey: ["tunnels"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("tunnels")
+        .select("*")
+        .order("name");
+      if (error) throw error;
+      return data;
     },
   });
 
-  const onSubmit = (data: DomainFormData) => {
-    createDomainMutation.mutate(data);
+  const createDomainMutation = useMutation({
+    mutationFn: async (values: FormValues) => {
+      const { data, error } = await supabase
+        .from("domains")
+        .insert({
+          hostname: values.hostname,
+          fqdn: values.hostname,
+          tunnel_id: values.tunnel_id,
+          publish_strategy: "tunnel",
+          status: "pending",
+          active: values.active,
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      // Call configure-domain-tunnel
+      const { error: configError } = await supabase.functions.invoke("configure-domain-tunnel", {
+        body: {
+          domainId: data.id,
+          tunnelId: values.tunnel_id,
+          serviceUrl: values.service_url,
+        },
+      });
+
+      if (configError) throw configError;
+
+      return data;
+    },
+    onSuccess: () => {
+      toast.success("Domínio criado! Configure o CNAME para ativá-lo.");
+      queryClient.invalidateQueries({ queryKey: ["domains"] });
+      navigate("/domains");
+    },
+    onError: (error: any) => {
+      toast.error(error.message || "Erro ao criar domínio");
+    },
+  });
+
+  const onSubmit = (values: FormValues) => {
+    createDomainMutation.mutate(values);
   };
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
+    <div className="max-w-2xl mx-auto space-y-6">
       <div className="flex items-center gap-4">
         <Button variant="ghost" size="sm" onClick={() => navigate("/domains")}>
-          <ArrowLeft className="h-4 w-4 mr-2" />
-          Voltar
+          <ArrowLeft className="h-4 w-4" />
         </Button>
         <div>
-          <h2 className="text-3xl font-bold tracking-tight">Novo Domínio</h2>
+          <h1 className="text-3xl font-bold">Novo Domínio</h1>
           <p className="text-muted-foreground">
-            Configure um novo domínio para seu projeto
+            Adicione um domínio via Cloudflare Tunnel
           </p>
         </div>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-3">
-        {/* Main Form */}
-        <div className="md:col-span-2">
-          <Card>
-            <CardHeader>
-              <CardTitle>Informações do Domínio</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-                <div className="space-y-2">
-                  <Label htmlFor="hostname">Domínio</Label>
-                  <Input
-                    id="hostname"
-                    placeholder="exemplo.com"
-                    {...form.register("hostname")}
-                  />
-                  {form.formState.errors.hostname && (
-                    <p className="text-sm text-destructive">
-                      {form.formState.errors.hostname.message}
-                    </p>
-                  )}
-                </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>Informações do Domínio</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+              <FormField
+                control={form.control}
+                name="hostname"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Hostname</FormLabel>
+                    <FormControl>
+                      <Input placeholder="exemplo.com" {...field} />
+                    </FormControl>
+                    <FormDescription>
+                      Domínio completo (ex: app.seusite.com)
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
-                <div className="space-y-2">
-                  <Label htmlFor="type">Tipo</Label>
-                  <Select
-                    value={form.watch("type")}
-                    onValueChange={(value: any) => form.setValue("type", value)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecione o tipo" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="apex">Apex (exemplo.com)</SelectItem>
-                      <SelectItem value="www">WWW (www.exemplo.com)</SelectItem>
-                      <SelectItem value="custom">Subdomínio personalizado</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-4">
-                  <Label>Estratégia de Publicação</Label>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <Card 
-                      className={`cursor-pointer transition-colors ${
-                        publishStrategy === 'dns' ? 'ring-2 ring-primary' : ''
-                      }`}
-                      onClick={() => setPublishStrategy('dns')}
-                    >
-                      <CardContent className="p-4">
-                        <div className="flex items-center space-x-2">
-                          <div className={`w-3 h-3 rounded-full ${publishStrategy === 'dns' ? 'bg-primary' : 'bg-muted'}`} />
-                          <div>
-                            <h4 className="font-medium">DNS Direto</h4>
-                            <p className="text-sm text-muted-foreground">
-                              Aponta diretamente para o IP do servidor
-                            </p>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-
-                    <Card 
-                      className={`cursor-pointer transition-colors ${
-                        publishStrategy === 'tunnel' ? 'ring-2 ring-primary' : ''
-                      }`}
-                      onClick={() => setPublishStrategy('tunnel')}
-                    >
-                      <CardContent className="p-4">
-                        <div className="flex items-center space-x-2">
-                          <div className={`w-3 h-3 rounded-full ${publishStrategy === 'tunnel' ? 'bg-primary' : 'bg-muted'}`} />
-                          <div>
-                            <h4 className="font-medium">Cloudflare Tunnel</h4>
-                            <p className="text-sm text-muted-foreground">
-                              Usa túnel do Cloudflare
-                            </p>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </div>
-                </div>
-
-                {publishStrategy === 'dns' && (
-                  <div className="space-y-2">
-                    <Label htmlFor="vpsId">Servidor VPS</Label>
-                    <Select
-                      value={form.watch("vpsId") || ""}
-                      onValueChange={(value) => form.setValue("vpsId", value)}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecione um servidor VPS" />
-                      </SelectTrigger>
+              <FormField
+                control={form.control}
+                name="tunnel_id"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Tunnel</FormLabel>
+                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Selecione um tunnel" />
+                        </SelectTrigger>
+                      </FormControl>
                       <SelectContent>
-                        {vpsData.map((vps) => (
-                          <SelectItem key={vps.id} value={vps.id}>
-                            <div className="flex items-center gap-2">
-                              <Server className="h-4 w-4" />
-                              {vps.name} ({vps.ipv4})
-                            </div>
+                        {tunnels.map((tunnel: any) => (
+                          <SelectItem key={tunnel.id} value={tunnel.id}>
+                            {tunnel.name}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
-                    {vpsData.length === 0 && (
-                      <p className="text-sm text-muted-foreground">
-                        Nenhuma VPS disponível. Crie uma VPS primeiro.
-                      </p>
-                    )}
-                  </div>
+                    <FormDescription>
+                      Tunnel Cloudflare para rotear o tráfego
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
                 )}
+              />
 
-                {publishStrategy === 'tunnel' && (
-                  <div className="space-y-2">
-                    <Label htmlFor="tunnelId">Túnel Cloudflare</Label>
-                    <Input
-                      id="tunnelId"
-                      placeholder="ID do túnel Cloudflare"
-                      value={form.watch("tunnelId") || ""}
-                      onChange={(e) => form.setValue("tunnelId", e.target.value)}
-                    />
-                  </div>
+              <FormField
+                control={form.control}
+                name="service_url"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>URL do Serviço</FormLabel>
+                    <FormControl>
+                      <Input placeholder="http://localhost:3000" {...field} />
+                    </FormControl>
+                    <FormDescription>
+                      URL interna para onde o tunnel vai rotear
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
                 )}
+              />
 
-                <div className="flex items-center space-x-2">
-                  <Switch
-                    id="active"
-                    checked={form.watch("active")}
-                    onCheckedChange={(checked) => form.setValue("active", checked)}
-                  />
-                  <Label htmlFor="active">Domínio ativo</Label>
-                </div>
+              <FormField
+                control={form.control}
+                name="active"
+                render={({ field }) => (
+                  <FormItem className="flex items-center justify-between rounded-lg border p-4">
+                    <div className="space-y-0.5">
+                      <FormLabel className="text-base">Ativo</FormLabel>
+                      <FormDescription>
+                        Domínio estará ativo após configuração
+                      </FormDescription>
+                    </div>
+                    <FormControl>
+                      <Switch checked={field.value} onCheckedChange={field.onChange} />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
 
-                <div className="flex justify-between">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => navigate("/domains")}
-                  >
-                    <X className="h-4 w-4 mr-2" />
-                    Cancelar
-                  </Button>
-                  <Button
-                    type="submit"
-                    disabled={createDomainMutation.isPending}
-                    className="min-w-[140px]"
-                  >
-                    {createDomainMutation.isPending ? (
-                      <div className="flex items-center gap-2">
-                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                        {publishStrategy === 'dns' ? 'Configurando...' : 'Criando...'}
-                      </div>
-                    ) : (
-                      'Criar Domínio'
-                    )}
-                  </Button>
-                </div>
-              </form>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Help Sidebar */}
-        <div className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Info className="h-4 w-4" />
-                Ajuda
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <h4 className="font-medium mb-2">DNS Direto</h4>
-                <p className="text-sm text-muted-foreground mb-2">
-                  Aponta o domínio diretamente para o IP do servidor VPS.
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  ✅ Configura DNS no Cloudflare automaticamente<br/>
-                  ✅ Atualiza Caddyfile na VPS automaticamente
-                </p>
+              <div className="flex gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => navigate("/domains")}
+                  className="flex-1"
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={createDomainMutation.isPending}
+                  className="flex-1"
+                >
+                  {createDomainMutation.isPending && (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  )}
+                  Criar Domínio
+                </Button>
               </div>
-              
-              <div>
-                <h4 className="font-medium mb-2">Cloudflare Tunnel</h4>
-                <p className="text-sm text-muted-foreground mb-2">
-                  Usa túneis do Cloudflare para rotear tráfego.
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  ✅ Mais seguro, não expõe IP do servidor<br/>
-                  ⚠️ Requer configuração manual do túnel
-                </p>
-              </div>
-            </CardContent>
-          </Card>
+            </form>
+          </Form>
+        </CardContent>
+      </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Exemplo</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <Globe className="h-4 w-4 text-muted-foreground" />
-                  <code className="text-sm">exemplo.com</code>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Server className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm text-muted-foreground">
-                    {publishStrategy === 'dns' ? 'DNS → VPS' : 'DNS → Túnel → VPS'}
-                  </span>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
+      <Card className="bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800">
+        <CardContent className="pt-6">
+          <h3 className="font-semibold mb-2">Próximos passos:</h3>
+          <ol className="list-decimal list-inside space-y-1 text-sm text-muted-foreground">
+            <li>Criar o domínio aqui</li>
+            <li>Configurar CNAME no DNS apontando para o tunnel</li>
+            <li>Aguardar propagação (verificação automática)</li>
+            <li>Domínio ficará ativo automaticamente</li>
+          </ol>
+        </CardContent>
+      </Card>
     </div>
   );
 }

@@ -124,15 +124,77 @@ async function getCloudflareTunnels(): Promise<CloudflareTunnel[]> {
 async function importTunnelsToDatabase(tunnels: CloudflareTunnel[]) {
   console.log('Starting tunnel import to database...')
   
-  const tunnelsToUpsert = tunnels.map(tunnel => ({
-    tunnel_id: tunnel.id,
-    name: tunnel.name,
-    provider: 'cloudflared',
-    status: tunnel.conns && tunnel.conns.length > 0 ? 'connected' : 'disconnected',
-    last_seen_at: new Date().toISOString(),
-    created_at: tunnel.created_at,
-    updated_at: new Date().toISOString()
-  }))
+  // Add detailed logging for tunnel data structure
+  console.log('=== TUNNEL DATA STRUCTURE ANALYSIS ===')
+  tunnels.forEach((tunnel, index) => {
+    console.log(`\nTunnel ${index + 1}: ${tunnel.name}`)
+    console.log(`- ID: ${tunnel.id}`)
+    console.log(`- Created: ${tunnel.created_at}`)
+    console.log(`- Full tunnel object:`, JSON.stringify(tunnel, null, 2))
+    
+    // Check different possible connection fields
+    console.log(`- tunnel.conns:`, tunnel.conns)
+    console.log(`- tunnel.connections:`, (tunnel as any).connections)
+    console.log(`- tunnel.status:`, (tunnel as any).status)
+    console.log(`- tunnel.active:`, (tunnel as any).active)
+    
+    // Check if conns exists and its structure
+    if (tunnel.conns) {
+      console.log(`- conns array length: ${tunnel.conns.length}`)
+      console.log(`- conns structure:`, JSON.stringify(tunnel.conns, null, 2))
+    } else {
+      console.log(`- conns field is missing or null`)
+    }
+    
+    // Check for alternative connection data
+    const altConnections = (tunnel as any).connections;
+    if (altConnections) {
+      console.log(`- connections field found:`, JSON.stringify(altConnections, null, 2))
+    }
+  })
+  console.log('=== END TUNNEL DATA ANALYSIS ===\n')
+  
+  const tunnelsToUpsert = tunnels.map(tunnel => {
+    // Improved status detection logic
+    let status = 'disconnected';
+    
+    // Method 1: Check tunnel.conns (original method)
+    if (tunnel.conns && tunnel.conns.length > 0) {
+      status = 'connected';
+      console.log(`Tunnel ${tunnel.name}: Status = connected (via conns, count: ${tunnel.conns.length})`)
+    }
+    // Method 2: Check alternative connections field
+    else if ((tunnel as any).connections && (tunnel as any).connections.length > 0) {
+      status = 'connected';
+      console.log(`Tunnel ${tunnel.name}: Status = connected (via connections, count: ${(tunnel as any).connections.length})`)
+    }
+    // Method 3: Check if tunnel has status field
+    else if ((tunnel as any).status === 'active' || (tunnel as any).status === 'connected') {
+      status = 'connected';
+      console.log(`Tunnel ${tunnel.name}: Status = connected (via status field: ${(tunnel as any).status})`)
+    }
+    // Method 4: Assume active if created recently (fallback)
+    else {
+      const createdAt = new Date(tunnel.created_at);
+      const hoursSinceCreated = (Date.now() - createdAt.getTime()) / (1000 * 60 * 60);
+      if (hoursSinceCreated < 24) {
+        status = 'connected'; // Assume recently created tunnels are likely connected
+        console.log(`Tunnel ${tunnel.name}: Status = connected (fallback - created ${hoursSinceCreated.toFixed(1)}h ago)`)
+      } else {
+        console.log(`Tunnel ${tunnel.name}: Status = disconnected (no connection data found)`)
+      }
+    }
+    
+    return {
+      tunnel_id: tunnel.id,
+      name: tunnel.name,
+      provider: 'cloudflared',
+      status: status as 'connected' | 'disconnected',
+      last_seen_at: new Date().toISOString(),
+      created_at: tunnel.created_at,
+      updated_at: new Date().toISOString()
+    }
+  })
 
   const { data: upsertedTunnels, error: tunnelsError } = await supabase
     .from('tunnels')
